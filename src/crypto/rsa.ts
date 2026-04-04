@@ -6,6 +6,7 @@ import { toBase64Url, fromBase64Url } from "./ecies";
 const HASH = "SHA-256";
 const AES_KEY_BITS = 256;
 const IV_BYTES = 12;
+const RSA_MIN_PRIVATE_KEY_BYTES = 600;
 
 export type RsaKeySize = 2048 | 4096;
 
@@ -39,6 +40,36 @@ function concat(...arrays: Uint8Array[]): Uint8Array<ArrayBuffer> {
     offset += a.length;
   }
   return result as Uint8Array<ArrayBuffer>;
+}
+
+function expectedWrappedKeyBytes(keySize: RsaKeySize): number {
+  return keySize / 8;
+}
+
+function validateSpki(spki: Uint8Array, keySize: RsaKeySize, label: string) {
+  const minBytes = keySize === 2048 ? 200 : 400;
+  if (spki.length < minBytes) {
+    throw new Error(`${label} is truncated or invalid.`);
+  }
+}
+
+function validatePkcs8(pkcs8: Uint8Array, label: string) {
+  if (pkcs8.length < RSA_MIN_PRIVATE_KEY_BYTES) {
+    throw new Error(`${label} is truncated or invalid.`);
+  }
+}
+
+function validateEnvelope(env: RsaCiphertext, keySize: RsaKeySize) {
+  const wrappedBytes = expectedWrappedKeyBytes(keySize);
+  if (env.wrappedKey.length !== wrappedBytes) {
+    throw new Error(`RSA-${keySize} wrapped key must be ${wrappedBytes} bytes.`);
+  }
+  if (env.iv.length !== IV_BYTES) {
+    throw new Error(`RSA IV must be ${IV_BYTES} bytes.`);
+  }
+  if (env.ciphertext.length < 16) {
+    throw new Error("RSA ciphertext is truncated.");
+  }
 }
 
 // ── 2.1 / 2.2  Keypair generation ───────────────────────────────────
@@ -110,6 +141,9 @@ export async function open(
   recipientPrivKey: CryptoKey,
   envelope: RsaCiphertext
 ): Promise<Uint8Array> {
+  const keySize = (recipientPrivKey.algorithm as RsaHashedKeyAlgorithm).modulusLength as RsaKeySize;
+  validateEnvelope(envelope, keySize);
+
   // Unwrap AES key
   const aesKey = await crypto.subtle.unwrapKey(
     "raw",
@@ -140,29 +174,45 @@ export function serializeEnvelope(env: RsaCiphertext, _keySize: RsaKeySize): str
 
 export function deserializeEnvelope(s: string, keySize: RsaKeySize): RsaCiphertext {
   const data = fromBase64Url(s);
-  const wkLen = keySize / 8;
-  return {
+  const wkLen = expectedWrappedKeyBytes(keySize);
+  const minBytes = wkLen + IV_BYTES + 16;
+  if (data.length < minBytes) {
+    throw new Error(`RSA-${keySize} payload is too short.`);
+  }
+  const envelope = {
     wrappedKey: data.slice(0, wkLen),
     iv: data.slice(wkLen, wkLen + IV_BYTES),
     ciphertext: data.slice(wkLen + IV_BYTES),
   };
+  validateEnvelope(envelope, keySize);
+  return envelope;
 }
 
 // ── Import keys from base64url ───────────────────────────────────────
 
 export async function importPublicKey(b64: string): Promise<CryptoKey> {
   const spki = fromBase64Url(b64);
-  return crypto.subtle.importKey(
-    "spki",
-    spki,
-    { name: "RSA-OAEP", hash: HASH },
-    true,
-    ["wrapKey"]
-  );
+  let lastError: Error | null = null;
+  for (const keySize of [2048, 4096] as const) {
+    validateSpki(spki, keySize, "Public key");
+    try {
+      return await crypto.subtle.importKey(
+        "spki",
+        spki,
+        { name: "RSA-OAEP", hash: HASH },
+        true,
+        ["wrapKey"]
+      );
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("RSA public key import failed.");
+    }
+  }
+  throw new Error(lastError?.message ?? "Public key is invalid.");
 }
 
 export async function importPrivateKey(b64: string): Promise<CryptoKey> {
   const pkcs8 = fromBase64Url(b64);
+  validatePkcs8(pkcs8, "Private key");
   return crypto.subtle.importKey(
     "pkcs8",
     pkcs8,
@@ -171,3 +221,8 @@ export async function importPrivateKey(b64: string): Promise<CryptoKey> {
     ["unwrapKey"]
   );
 }
+
+export {
+  IV_BYTES as RSA_IV_BYTES,
+  expectedWrappedKeyBytes,
+};

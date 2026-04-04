@@ -4,6 +4,7 @@ import "./style.css";
 import * as ecies from "./crypto/ecies";
 import * as rsa from "./crypto/rsa";
 import { measure, emptyMetrics, type Metrics } from "./crypto/metrics";
+import { runStartupSelfTest } from "./crypto/selftest";
 import { buildShareUrl, parseCurrentUrl } from "./keyurl";
 import { generateQrSvg } from "./qr";
 
@@ -29,8 +30,18 @@ interface AlgoState {
 }
 
 type Tab = "ecies" | "rsa2048" | "rsa4096" | "compare";
+type SelfTestState =
+  | { status: "running"; message: string }
+  | { status: "passed"; message: string }
+  | { status: "failed"; message: string };
 
 let currentTab: Tab = "ecies";
+let selfTestState: SelfTestState = {
+  status: "running",
+  message: "Running WebCrypto self-check...",
+};
+let globalListenersBound = false;
+let deepLinkRecipient: { algo: Exclude<Tab, "compare">; publicKeyB64: string } | null = null;
 
 const state: Record<"ecies" | "rsa2048" | "rsa4096", AlgoState> = {
   ecies: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics() },
@@ -87,11 +98,22 @@ function render() {
 }
 
 function renderSelfTest(): string {
-  if (checkWebCrypto()) {
-    return `<div class="text-xs text-emerald-600 text-center mb-4" role="status">✓ WebCrypto available</div>`;
+  if (!checkWebCrypto()) {
+    return `<div class="text-sm text-red-500 text-center mb-4 p-3 border border-red-800 rounded-lg bg-red-950" role="alert">
+    WebCrypto unavailable. This app requires a secure context (HTTPS or localhost).
+  </div>`;
   }
+
+  if (selfTestState.status === "running") {
+    return `<div class="text-xs text-amber-400 text-center mb-4" role="status">${selfTestState.message}</div>`;
+  }
+
+  if (selfTestState.status === "passed") {
+    return `<div class="text-xs text-emerald-500 text-center mb-4" role="status">${selfTestState.message}</div>`;
+  }
+
   return `<div class="text-sm text-red-500 text-center mb-4 p-3 border border-red-800 rounded-lg bg-red-950" role="alert">
-    ✗ WebCrypto not available — this app requires a secure context (HTTPS or localhost).
+    ${escapeHtml(selfTestState.message)}
   </div>`;
 }
 
@@ -115,6 +137,7 @@ function renderTab(id: Tab, label: string): string {
 function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
   const s = state[algo];
   const m = s.metrics;
+  const recipientPublicKey = deepLinkRecipient?.algo === algo ? deepLinkRecipient.publicKeyB64 : s.publicKeyB64;
   const algoLabel =
     algo === "ecies" ? "ECIES P-256" : algo === "rsa2048" ? "RSA-2048" : "RSA-4096";
 
@@ -163,7 +186,7 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
         <div class="space-y-3">
           <div>
             <label for="seal-recipient-pk" class="text-xs text-zinc-400 block mb-1">Recipient Public Key (base64url)</label>
-            <input id="seal-recipient-pk" type="text" value="${escapeHtml(s.publicKeyB64)}"
+            <input id="seal-recipient-pk" type="text" value="${escapeHtml(recipientPublicKey)}"
               class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400"
               placeholder="Paste recipient's public key..."
             />
@@ -358,10 +381,7 @@ function bindEvents() {
   document.getElementById("modal-how")?.addEventListener("click", (e) => {
     if (e.target === e.currentTarget) closeModal();
   });
-  // Escape key closes modal
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") closeModal();
-  });
+  bindGlobalListeners();
 
   // Tab keyboard navigation (arrow keys)
   document.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach((btn) => {
@@ -460,20 +480,25 @@ async function doSeal(algo: "ecies" | "rsa2048" | "rsa4096") {
   if (!recipientPkB64 || !message) return;
 
   const plaintext = new TextEncoder().encode(message);
-
-  if (algo === "ecies") {
-    const pubKey = await ecies.importPublicKey(recipientPkB64);
-    const { result: envelope, timeMs } = await measure(() => ecies.seal(pubKey, plaintext));
-    s.ciphertext = ecies.serializeEnvelope(envelope);
-    s.metrics.encryptTimeMs = timeMs;
-    s.metrics.ciphertextSizeBytes = envelope.ephemeralPub.length + envelope.iv.length + envelope.ciphertext.length;
-  } else {
-    const pubKey = await rsa.importPublicKey(recipientPkB64);
-    const { result: envelope, timeMs } = await measure(() => rsa.seal(pubKey, plaintext));
-    const keySize = algo === "rsa2048" ? 2048 : 4096;
-    s.ciphertext = rsa.serializeEnvelope(envelope, keySize as rsa.RsaKeySize);
-    s.metrics.encryptTimeMs = timeMs;
-    s.metrics.ciphertextSizeBytes = envelope.wrappedKey.length + envelope.iv.length + envelope.ciphertext.length;
+  try {
+    if (algo === "ecies") {
+      const pubKey = await ecies.importPublicKey(recipientPkB64);
+      const { result: envelope, timeMs } = await measure(() => ecies.seal(pubKey, plaintext));
+      s.ciphertext = ecies.serializeEnvelope(envelope);
+      s.metrics.encryptTimeMs = timeMs;
+      s.metrics.ciphertextSizeBytes = envelope.ephemeralPub.length + envelope.iv.length + envelope.ciphertext.length;
+    } else {
+      const pubKey = await rsa.importPublicKey(recipientPkB64);
+      const { result: envelope, timeMs } = await measure(() => rsa.seal(pubKey, plaintext));
+      const keySize = algo === "rsa2048" ? 2048 : 4096;
+      s.ciphertext = rsa.serializeEnvelope(envelope, keySize as rsa.RsaKeySize);
+      s.metrics.encryptTimeMs = timeMs;
+      s.metrics.ciphertextSizeBytes = envelope.wrappedKey.length + envelope.iv.length + envelope.ciphertext.length;
+    }
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : "Encryption failed.";
+    announce(messageText);
+    showResultMessage(messageText, true);
   }
 }
 
@@ -502,25 +527,11 @@ async function doOpen(algo: "ecies" | "rsa2048" | "rsa4096") {
     s.metrics.decryptTimeMs = timeMs;
 
     const decoded = new TextDecoder().decode(plaintext);
-    const resultDiv = document.getElementById("open-result")!;
-    const ptDiv = document.getElementById("open-plaintext")!;
-    ptDiv.textContent = decoded;
-    resultDiv.classList.remove("hidden");
-
-    const label = resultDiv.previousElementSibling as HTMLElement | null;
-    if (label) {
-      const existingLabel = resultDiv.querySelector("label");
-      if (existingLabel) {
-        existingLabel.textContent = `Decrypted Message — ${timeMs.toFixed(1)}ms`;
-      }
-    }
+    showResultMessage(decoded, false, `Decrypted Message — ${timeMs.toFixed(1)}ms`);
   } catch (e) {
-    const resultDiv = document.getElementById("open-result")!;
-    const ptDiv = document.getElementById("open-plaintext")!;
-    ptDiv.textContent = `Error: ${e instanceof Error ? e.message : "Decryption failed"}`;
-    ptDiv.className =
-      "text-sm text-red-400 bg-zinc-950 p-3 rounded-lg border border-red-800";
-    resultDiv.classList.remove("hidden");
+    const messageText = e instanceof Error ? e.message : "Decryption failed.";
+    announce(messageText);
+    showResultMessage(messageText, true);
   }
 }
 
@@ -535,6 +546,31 @@ function escapeHtml(s: string): string {
 function announce(message: string) {
   const el = document.getElementById("status-announcer");
   if (el) el.textContent = message;
+}
+
+function bindGlobalListeners() {
+  if (globalListenersBound) return;
+
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeModal();
+  });
+
+  globalListenersBound = true;
+}
+
+function showResultMessage(message: string, isError: boolean, label = "Decrypted Message") {
+  const resultDiv = document.getElementById("open-result");
+  const ptDiv = document.getElementById("open-plaintext");
+  const labelEl = resultDiv?.querySelector("label");
+
+  if (!resultDiv || !ptDiv || !labelEl) return;
+
+  labelEl.textContent = label;
+  ptDiv.textContent = message;
+  ptDiv.className = isError
+    ? "text-sm text-red-400 bg-zinc-950 p-3 rounded-lg border border-red-800"
+    : "text-sm text-zinc-100 bg-zinc-950 p-3 rounded-lg border border-emerald-800";
+  resultDiv.classList.remove("hidden");
 }
 
 function closeModal() {
@@ -552,16 +588,21 @@ function handleDeepLink() {
   if (!params) return;
 
   currentTab = params.algo === "ecies" ? "ecies" : params.algo === "rsa2048" ? "rsa2048" : "rsa4096";
-
-  // Pre-fill the seal panel with the received public key
+  deepLinkRecipient = { algo: currentTab, publicKeyB64: params.pk };
   render();
-  const pkInput = document.getElementById("seal-recipient-pk") as HTMLInputElement | null;
-  if (pkInput) {
-    pkInput.value = params.pk;
-  }
 }
 
 // ── Init ─────────────────────────────────────────────────────────────
 
 render();
 handleDeepLink();
+
+if (checkWebCrypto()) {
+  void runStartupSelfTest().then((result) => {
+    selfTestState = result.ok
+      ? { status: "passed", message: result.message }
+      : { status: "failed", message: result.message };
+    render();
+    if (!result.ok) announce(result.message);
+  });
+}

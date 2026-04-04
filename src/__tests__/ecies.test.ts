@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  ECIES_MIN_ENVELOPE_BYTES,
   generateKeypair,
   exportKeys,
   importPublicKey,
@@ -9,6 +10,7 @@ import {
   serializeEnvelope,
   deserializeEnvelope,
 } from "../crypto/ecies";
+import { runStartupSelfTest } from "../crypto/selftest";
 
 describe("ECIES P-256 round-trip", () => {
   for (let i = 1; i <= 10; i++) {
@@ -87,5 +89,24 @@ describe("ECIES P-256 round-trip", () => {
     const envelope = await seal(kp.publicKey, plaintext);
     const recovered = await open(kp.privateKey, envelope);
     expect(new TextDecoder().decode(recovered)).toBe("");
+  });
+
+  it("rejects malformed public keys before import", async () => {
+    await expect(importPublicKey("invalid+/=")).rejects.toThrow("base64url");
+    await expect(importPublicKey("AQID")).rejects.toThrow("65 bytes");
+  });
+
+  it("rejects malformed private keys before import", async () => {
+    await expect(importPrivateKey("AQID")).rejects.toThrow("truncated or invalid");
+  });
+
+  it("rejects truncated ECIES payloads", () => {
+    const tooShort = "A".repeat(ECIES_MIN_ENVELOPE_BYTES - 1);
+    expect(() => deserializeEnvelope(tooShort)).toThrow();
+  });
+
+  it("passes startup self-test", async () => {
+    const result = await runStartupSelfTest();
+    expect(result.ok).toBe(true);
   });
 });

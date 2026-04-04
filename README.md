@@ -19,6 +19,9 @@ Iron Letter is a zero-dependency cryptography demo that runs entirely in the bro
 
 - **Key generation** with timing and size metrics
 - **Encrypt / decrypt** round-trip in each scheme
+- **Strict input validation** for malformed keys and truncated payloads
+- **Startup self-check** that verifies ECIES and RSA pipelines before use
+- **Known-answer vectors** for fixed ECIES, RSA-2048, and RSA-4096 ciphertexts
 - **Side-by-side comparison** table with bar charts
 - **Shareable public key URLs** with QR codes
 - **Deep linking** — send someone a URL pre-loaded with your public key
@@ -38,6 +41,8 @@ Open `http://localhost:5173/iron-letter/` in a browser.
 
 ```bash
 npm run build   # outputs to dist/
+npm test        # unit + crypto validation tests
+npm run test:e2e
 ```
 
 GitHub Pages deployment is configured via `.github/workflows/deploy.yml` — pushes to `main` auto-deploy.
@@ -64,6 +69,9 @@ src/
 - Share URLs contain only **public** keys
 - All encryption uses authenticated encryption (AES-256-GCM)
 - ECIES uses ephemeral keypairs — a fresh ECDH keypair per message
+- Malformed keys and truncated ciphertexts are rejected before WebCrypto operations run
+- Startup performs a real ECIES and RSA round-trip self-check before showing the demo as healthy
+- A strict GitHub Pages-compatible CSP and `no-referrer` policy are set via document meta tags
 
 ## Tech stack
 

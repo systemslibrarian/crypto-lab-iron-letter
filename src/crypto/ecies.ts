@@ -5,6 +5,9 @@ const CURVE = "P-256";
 const AES_KEY_BITS = 256;
 const IV_BYTES = 12;
 const HKDF_INFO = new TextEncoder().encode("iron-letter-ecies-v1");
+const ECIES_PUBLIC_KEY_BYTES = 65;
+const ECIES_MIN_ENVELOPE_BYTES = ECIES_PUBLIC_KEY_BYTES + IV_BYTES + 16;
+const BASE64URL_RE = /^[A-Za-z0-9_-]+$/;
 
 export interface EciesKeypair {
   publicKey: CryptoKey;
@@ -34,11 +37,46 @@ function toBase64Url(buf: ArrayBuffer): string {
 }
 
 function fromBase64Url(s: string): Uint8Array<ArrayBuffer> {
+  validateBase64Url(s, "Encoded value");
   const padded = s.replace(/-/g, "+").replace(/_/g, "/");
   const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return bytes as Uint8Array<ArrayBuffer>;
+}
+
+function validateBase64Url(value: string, label: string) {
+  if (!value) {
+    throw new Error(`${label} is required.`);
+  }
+  if (!BASE64URL_RE.test(value)) {
+    throw new Error(`${label} must be base64url encoded.`);
+  }
+}
+
+function validateRawPublicKey(raw: Uint8Array, label: string) {
+  if (raw.length !== ECIES_PUBLIC_KEY_BYTES) {
+    throw new Error(`${label} must be ${ECIES_PUBLIC_KEY_BYTES} bytes.`);
+  }
+  if (raw[0] !== 0x04) {
+    throw new Error(`${label} must be an uncompressed P-256 point.`);
+  }
+}
+
+function validatePkcs8(pkcs8: Uint8Array, label: string) {
+  if (pkcs8.length < 100) {
+    throw new Error(`${label} is truncated or invalid.`);
+  }
+}
+
+function validateEnvelope(env: EciesCiphertext) {
+  validateRawPublicKey(env.ephemeralPub, "Ephemeral public key");
+  if (env.iv.length !== IV_BYTES) {
+    throw new Error(`ECIES IV must be ${IV_BYTES} bytes.`);
+  }
+  if (env.ciphertext.length < 16) {
+    throw new Error("ECIES ciphertext is truncated.");
+  }
 }
 
 function concat(...arrays: Uint8Array[]): Uint8Array<ArrayBuffer> {
@@ -162,6 +200,8 @@ export async function open(
   recipientPrivKey: CryptoKey,
   envelope: EciesCiphertext
 ): Promise<Uint8Array> {
+  validateEnvelope(envelope);
+
   // import ephemeral public key
   const ephPub = await crypto.subtle.importKey(
     "raw",
@@ -182,16 +222,20 @@ export async function open(
 // ── Serialization ────────────────────────────────────────────────────
 
 export function serializeEnvelope(env: EciesCiphertext): string {
+  validateEnvelope(env);
   const packed = concat(env.ephemeralPub, env.iv, env.ciphertext);
   return toBase64Url(packed.buffer as ArrayBuffer);
 }
 
 export function deserializeEnvelope(s: string): EciesCiphertext {
   const data = fromBase64Url(s);
+  if (data.length < ECIES_MIN_ENVELOPE_BYTES) {
+    throw new Error("ECIES payload is too short.");
+  }
   return {
-    ephemeralPub: data.slice(0, 65),
-    iv: data.slice(65, 65 + IV_BYTES),
-    ciphertext: data.slice(65 + IV_BYTES),
+    ephemeralPub: data.slice(0, ECIES_PUBLIC_KEY_BYTES),
+    iv: data.slice(ECIES_PUBLIC_KEY_BYTES, ECIES_PUBLIC_KEY_BYTES + IV_BYTES),
+    ciphertext: data.slice(ECIES_PUBLIC_KEY_BYTES + IV_BYTES),
   };
 }
 
@@ -199,6 +243,7 @@ export function deserializeEnvelope(s: string): EciesCiphertext {
 
 export async function importPublicKey(b64: string): Promise<CryptoKey> {
   const raw = fromBase64Url(b64);
+  validateRawPublicKey(raw, "Public key");
   return crypto.subtle.importKey(
     "raw",
     raw,
@@ -210,6 +255,7 @@ export async function importPublicKey(b64: string): Promise<CryptoKey> {
 
 export async function importPrivateKey(b64: string): Promise<CryptoKey> {
   const pkcs8 = fromBase64Url(b64);
+  validatePkcs8(pkcs8, "Private key");
   return crypto.subtle.importKey(
     "pkcs8",
     pkcs8,
@@ -219,4 +265,10 @@ export async function importPrivateKey(b64: string): Promise<CryptoKey> {
   );
 }
 
-export { toBase64Url, fromBase64Url };
+export {
+  ECIES_PUBLIC_KEY_BYTES,
+  ECIES_MIN_ENVELOPE_BYTES,
+  IV_BYTES as ECIES_IV_BYTES,
+  toBase64Url,
+  fromBase64Url,
+};

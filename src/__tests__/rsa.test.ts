@@ -88,6 +88,19 @@ describe("RSA-OAEP hybrid round-trip", () => {
         const recovered = await open(kp.privateKey, envelope);
         expect(new TextDecoder().decode(recovered)).toBe("");
       });
+
+      it("rejects malformed public keys before import", async () => {
+        await expect(importPublicKey("invalid+/=")).rejects.toThrow("base64url");
+        await expect(importPublicKey("AQID")).rejects.toThrow("truncated or invalid");
+      });
+
+      it("rejects malformed private keys before import", async () => {
+        await expect(importPrivateKey("AQID")).rejects.toThrow("truncated or invalid");
+      });
+
+      it("rejects truncated ciphertext payloads", () => {
+        expect(() => deserializeEnvelope("AQID", bits)).toThrow("payload is too short");
+      });
     });
   }
 });

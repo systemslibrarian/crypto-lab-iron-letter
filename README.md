@@ -3,6 +3,8 @@
 Asymmetric encryption in the browser — ECIES P-256 vs RSA-OAEP, side by side.  
 Seal a letter. Only one key can open it.
 
+**[Live Demo](https://systemslibrarian.github.io/iron-letter/)**
+
 ## What it does
 
 Iron Letter is a zero-dependency cryptography demo that runs entirely in the browser using the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API). It implements three asymmetric encryption schemes and lets you compare them head-to-head:

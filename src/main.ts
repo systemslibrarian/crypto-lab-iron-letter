@@ -57,16 +57,18 @@ function render() {
 
       ${renderSelfTest()}
 
-      <nav class="flex gap-1 mb-6 border-b border-zinc-800" role="tablist">
+      <nav class="flex flex-wrap gap-1 mb-6 border-b border-zinc-800" role="tablist" aria-label="Encryption algorithms">
         ${renderTab("ecies", "ECIES P-256")}
         ${renderTab("rsa2048", "RSA-2048")}
         ${renderTab("rsa4096", "RSA-4096")}
         ${renderTab("compare", "Compare")}
       </nav>
 
-      <main>
+      <main id="main-content" role="tabpanel" aria-labelledby="tab-${currentTab}">
         ${currentTab === "compare" ? renderCompare() : renderAlgoPanel(currentTab)}
       </main>
+
+      <div aria-live="polite" aria-atomic="true" id="status-announcer" class="sr-only"></div>
 
       <footer class="mt-12 pt-6 border-t border-zinc-800 text-center">
         <button id="btn-how" class="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-4 transition-colors">
@@ -96,13 +98,16 @@ function renderSelfTest(): string {
 function renderTab(id: Tab, label: string): string {
   const active = currentTab === id;
   return `<button
+    id="tab-${id}"
     data-tab="${id}"
     role="tab"
     aria-selected="${active}"
-    class="px-4 py-2 text-sm font-medium transition-colors ${
+    aria-controls="main-content"
+    tabindex="${active ? "0" : "-1"}"
+    class="min-h-[44px] px-4 py-2 text-sm font-medium transition-colors ${
       active
         ? "text-amber-400 border-b-2 border-amber-400 -mb-px"
-        : "text-zinc-500 hover:text-zinc-300"
+        : "text-zinc-400 hover:text-zinc-200"
     }"
   >${label}</button>`;
 }
@@ -117,8 +122,8 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
     <div class="space-y-6">
       <!-- Keygen Panel -->
       <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
-        <h2 class="text-lg font-semibold text-zinc-200 mb-4">🔑 Key Generation</h2>
-        <button id="btn-keygen" class="px-4 py-2 rounded-lg bg-amber-500 text-zinc-950 font-medium text-sm hover:bg-amber-400 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-400 focus:ring-offset-2 focus:ring-offset-zinc-900">
+        <h2 class="text-lg font-semibold text-zinc-200 mb-4"><span aria-hidden="true">🔑</span> Key Generation</h2>
+        <button id="btn-keygen" class="min-h-[44px] px-4 py-2 rounded-lg bg-amber-500 text-zinc-950 font-medium text-sm hover:bg-amber-400 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
           Generate ${algoLabel} Keypair
         </button>
         ${
@@ -126,11 +131,11 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
             ? `
           <div class="mt-4 space-y-3">
             <div>
-              <label class="text-xs text-zinc-500 block mb-1">Public Key (${m.publicKeySizeBytes} bytes) — ${m.keygenTimeMs.toFixed(1)}ms</label>
-              <div class="font-mono text-xs text-emerald-400 bg-zinc-950 p-3 rounded-lg break-all max-h-24 overflow-y-auto">${escapeHtml(s.publicKeyB64)}</div>
+              <label class="text-xs text-zinc-400 block mb-1">Public Key (${m.publicKeySizeBytes} bytes) — ${m.keygenTimeMs.toFixed(1)}ms</label>
+              <div class="font-mono text-xs text-emerald-400 bg-zinc-950 p-3 rounded-lg break-all max-h-24 overflow-y-auto" role="region" aria-label="Public key value">${escapeHtml(s.publicKeyB64)}</div>
             </div>
             <div>
-              <label class="text-xs text-zinc-500 block mb-1">Private Key (${m.privateKeySizeBytes} bytes)</label>
+              <label class="text-xs text-zinc-400 block mb-1">Private Key (${m.privateKeySizeBytes} bytes)</label>
               <details>
                 <summary class="text-xs text-zinc-600 cursor-pointer hover:text-zinc-400">Reveal private key</summary>
                 <div class="font-mono text-xs text-red-400 bg-zinc-950 p-3 rounded-lg break-all mt-1 max-h-24 overflow-y-auto">${escapeHtml(s.privateKeyB64)}</div>
@@ -138,11 +143,11 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
             </div>
             <!-- Share URL -->
             <div class="flex gap-2 items-center">
-              <button id="btn-copy-url" class="px-3 py-1.5 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors">
-                📋 Copy share URL
+              <button id="btn-copy-url" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
+                <span aria-hidden="true">📋</span> Copy share URL
               </button>
-              <button id="btn-qr" class="px-3 py-1.5 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors">
-                📱 QR Code
+              <button id="btn-qr" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
+                <span aria-hidden="true">📱</span> QR Code
               </button>
             </div>
             <div id="qr-container" class="hidden mt-2"></div>
@@ -154,31 +159,31 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
 
       <!-- Seal Panel -->
       <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
-        <h2 class="text-lg font-semibold text-zinc-200 mb-4">📨 Seal (Encrypt)</h2>
+        <h2 class="text-lg font-semibold text-zinc-200 mb-4"><span aria-hidden="true">📨</span> Seal (Encrypt)</h2>
         <div class="space-y-3">
           <div>
-            <label for="seal-recipient-pk" class="text-xs text-zinc-500 block mb-1">Recipient Public Key (base64url)</label>
+            <label for="seal-recipient-pk" class="text-xs text-zinc-400 block mb-1">Recipient Public Key (base64url)</label>
             <input id="seal-recipient-pk" type="text" value="${escapeHtml(s.publicKeyB64)}"
-              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:ring-amber-400 focus:border-amber-400 focus:outline-none"
+              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400"
               placeholder="Paste recipient's public key..."
             />
           </div>
           <div>
-            <label for="seal-message" class="text-xs text-zinc-500 block mb-1">Message</label>
+            <label for="seal-message" class="text-xs text-zinc-400 block mb-1">Message</label>
             <textarea id="seal-message" rows="3"
-              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm rounded-lg p-3 focus:ring-amber-400 focus:border-amber-400 focus:outline-none resize-y"
+              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400 resize-y"
               placeholder="Type your secret message..."
             ></textarea>
           </div>
-          <button id="btn-seal" class="px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-500 transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:ring-offset-2 focus:ring-offset-zinc-900">
+          <button id="btn-seal" class="min-h-[44px] px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-500 transition-colors focus:outline-2 focus:outline-emerald-400 focus:outline-offset-2">
             Seal Letter
           </button>
           ${
             s.ciphertext
               ? `
             <div class="mt-3">
-              <label class="text-xs text-zinc-500 block mb-1">Ciphertext (${m.ciphertextSizeBytes} bytes) — ${m.encryptTimeMs.toFixed(1)}ms</label>
-              <div class="font-mono text-xs text-sky-400 bg-zinc-950 p-3 rounded-lg break-all max-h-32 overflow-y-auto">${escapeHtml(s.ciphertext)}</div>
+              <label class="text-xs text-zinc-400 block mb-1">Ciphertext (${m.ciphertextSizeBytes} bytes) — ${m.encryptTimeMs.toFixed(1)}ms</label>
+              <div class="font-mono text-xs text-sky-400 bg-zinc-950 p-3 rounded-lg break-all max-h-32 overflow-y-auto" role="region" aria-label="Encrypted ciphertext">${escapeHtml(s.ciphertext)}</div>
             </div>
           `
               : ""
@@ -188,27 +193,27 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
 
       <!-- Open Panel -->
       <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
-        <h2 class="text-lg font-semibold text-zinc-200 mb-4">📬 Open (Decrypt)</h2>
+        <h2 class="text-lg font-semibold text-zinc-200 mb-4"><span aria-hidden="true">📬</span> Open (Decrypt)</h2>
         <div class="space-y-3">
           <div>
-            <label for="open-privkey" class="text-xs text-zinc-500 block mb-1">Private Key (base64url)</label>
+            <label for="open-privkey" class="text-xs text-zinc-400 block mb-1">Private Key (base64url)</label>
             <input id="open-privkey" type="text" value="${escapeHtml(s.privateKeyB64)}"
-              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:ring-amber-400 focus:border-amber-400 focus:outline-none"
+              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400"
               placeholder="Paste your private key..."
             />
           </div>
           <div>
-            <label for="open-ciphertext" class="text-xs text-zinc-500 block mb-1">Ciphertext</label>
+            <label for="open-ciphertext" class="text-xs text-zinc-400 block mb-1">Ciphertext</label>
             <textarea id="open-ciphertext" rows="3"
-              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm font-mono rounded-lg p-3 focus:ring-amber-400 focus:border-amber-400 focus:outline-none resize-y"
+              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400 resize-y"
               placeholder="Paste ciphertext here..."
             >${escapeHtml(s.ciphertext)}</textarea>
           </div>
-          <button id="btn-open" class="px-4 py-2 rounded-lg bg-violet-600 text-white font-medium text-sm hover:bg-violet-500 transition-colors focus:outline-none focus:ring-2 focus:ring-violet-400 focus:ring-offset-2 focus:ring-offset-zinc-900">
+          <button id="btn-open" class="min-h-[44px] px-4 py-2 rounded-lg bg-violet-600 text-white font-medium text-sm hover:bg-violet-500 transition-colors focus:outline-2 focus:outline-violet-400 focus:outline-offset-2">
             Open Letter
           </button>
-          <div id="open-result" class="hidden mt-3">
-            <label class="text-xs text-zinc-500 block mb-1">Decrypted Message</label>
+          <div id="open-result" class="hidden mt-3" aria-live="polite">
+            <label class="text-xs text-zinc-400 block mb-1">Decrypted Message</label>
             <div id="open-plaintext" class="text-sm text-zinc-100 bg-zinc-950 p-3 rounded-lg border border-emerald-800"></div>
           </div>
         </div>
@@ -225,7 +230,7 @@ function renderCompare(): string {
 
   return `
     <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
-      <h2 class="text-lg font-semibold text-zinc-200 mb-4">📊 Side-by-Side Comparison</h2>
+      <h2 class="text-lg font-semibold text-zinc-200 mb-4"><span aria-hidden="true">📊</span> Side-by-Side Comparison</h2>
       ${
         !hasData
           ? `<p class="text-sm text-zinc-500">Generate keys and encrypt messages in each tab first to see comparisons.</p>`
@@ -233,7 +238,7 @@ function renderCompare(): string {
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead>
-              <tr class="text-zinc-500 text-xs text-left border-b border-zinc-800">
+              <tr class="text-zinc-400 text-xs text-left border-b border-zinc-800">
                 <th class="py-2 pr-4">Metric</th>
                 ${algos.map((a) => `<th class="py-2 px-4">${labels[a]}</th>`).join("")}
               </tr>
@@ -259,8 +264,8 @@ function renderCompare(): string {
                 const max = Math.max(...algos.map((x) => state[x].metrics.publicKeySizeBytes), 1);
                 const pct = (bytes / max) * 100;
                 return `
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs text-zinc-500 w-20 shrink-0">${labels[a]}</span>
+                  <div class="flex items-center gap-3" role="img" aria-label="${labels[a]}: ${bytes} bytes">
+                    <span class="text-xs text-zinc-400 w-20 shrink-0">${labels[a]}</span>
                     <div class="flex-1 bg-zinc-800 rounded-full h-4 overflow-hidden">
                       <div class="h-full bg-amber-500 rounded-full transition-all" style="width: ${pct}%"></div>
                     </div>
@@ -279,7 +284,7 @@ function renderCompare(): string {
 
 function compareRow(label: string, values: string[]): string {
   return `<tr class="border-b border-zinc-800/50">
-    <td class="py-2 pr-4 text-zinc-500">${label}</td>
+    <td class="py-2 pr-4 text-zinc-400">${label}</td>
     ${values.map((v) => `<td class="py-2 px-4 font-mono">${v}</td>`).join("")}
   </tr>`;
 }
@@ -349,13 +354,29 @@ function bindEvents() {
   document.getElementById("btn-how")?.addEventListener("click", () => {
     document.getElementById("modal-how")?.classList.remove("hidden");
   });
-  document.getElementById("btn-close-modal")?.addEventListener("click", () => {
-    document.getElementById("modal-how")?.classList.add("hidden");
-  });
+  document.getElementById("btn-close-modal")?.addEventListener("click", closeModal);
   document.getElementById("modal-how")?.addEventListener("click", (e) => {
-    if (e.target === e.currentTarget) {
-      (e.currentTarget as HTMLElement).classList.add("hidden");
-    }
+    if (e.target === e.currentTarget) closeModal();
+  });
+  // Escape key closes modal
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeModal();
+  });
+
+  // Tab keyboard navigation (arrow keys)
+  document.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach((btn) => {
+    btn.addEventListener("keydown", (e) => {
+      const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-tab]"));
+      const idx = tabs.indexOf(btn);
+      let next = -1;
+      if (e.key === "ArrowRight") next = (idx + 1) % tabs.length;
+      else if (e.key === "ArrowLeft") next = (idx - 1 + tabs.length) % tabs.length;
+      if (next >= 0) {
+        e.preventDefault();
+        tabs[next]!.focus();
+        tabs[next]!.click();
+      }
+    });
   });
 
   if (currentTab === "compare") return;
@@ -384,6 +405,7 @@ function bindEvents() {
     await navigator.clipboard.writeText(url);
     const btn = document.getElementById("btn-copy-url")!;
     btn.textContent = "✓ Copied!";
+    announce("Share URL copied to clipboard");
     setTimeout(() => {
       btn.textContent = "📋 Copy share URL";
     }, 1500);
@@ -508,6 +530,19 @@ function escapeHtml(s: string): string {
   const div = document.createElement("div");
   div.appendChild(document.createTextNode(s));
   return div.innerHTML;
+}
+
+function announce(message: string) {
+  const el = document.getElementById("status-announcer");
+  if (el) el.textContent = message;
+}
+
+function closeModal() {
+  const modal = document.getElementById("modal-how");
+  if (modal && !modal.classList.contains("hidden")) {
+    modal.classList.add("hidden");
+    document.getElementById("btn-how")?.focus();
+  }
 }
 
 // ── Deep link handling ───────────────────────────────────────────────

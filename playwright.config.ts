@@ -9,12 +9,12 @@ export default defineConfig({
   fullyParallel: true,
   retries: process.env.CI ? 1 : 0,
   use: {
-    baseURL: "http://127.0.0.1:4173/iron-letter/",
+    baseURL: "http://127.0.0.1:4173/crypto-lab-iron-letter/",
     trace: "on-first-retry",
   },
   webServer: {
     command: "npm run preview -- --host 127.0.0.1 --port 4173",
-    url: "http://127.0.0.1:4173/iron-letter/",
+    url: "http://127.0.0.1:4173/crypto-lab-iron-letter/",
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
   },

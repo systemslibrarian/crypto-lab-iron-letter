@@ -29,7 +29,7 @@ test.describe("Iron Letter smoke", () => {
     await expect(page.locator("#seal-recipient-pk")).not.toHaveValue("");
 
     const publicKey = await page.locator("#seal-recipient-pk").inputValue();
-    const shareUrl = new URL("http://127.0.0.1:4173/iron-letter/");
+    const shareUrl = new URL("http://127.0.0.1:4173/crypto-lab-iron-letter/");
     shareUrl.searchParams.set("algo", "rsa2048");
     shareUrl.searchParams.set("pk", publicKey);
 

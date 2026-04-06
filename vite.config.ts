@@ -3,5 +3,5 @@ import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
   plugins: [tailwindcss()],
-  base: "/iron-letter/",
+  base: "/crypto-lab-iron-letter/",
 });

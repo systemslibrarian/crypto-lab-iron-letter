@@ -3,7 +3,7 @@
 Asymmetric encryption in the browser — ECIES P-256 vs RSA-OAEP, side by side.  
 Seal a letter. Only one key can open it.
 
-**[Live Demo](https://systemslibrarian.github.io/iron-letter/)**
+**[Live Demo](https://systemslibrarian.github.io/crypto-lab-iron-letter/)**
 
 ## What it does
 
@@ -35,7 +35,7 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173/iron-letter/` in a browser.
+Open `http://localhost:5173/crypto-lab-iron-letter/` in a browser.
 
 ## Build & deploy
 

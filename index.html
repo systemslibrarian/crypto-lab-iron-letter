@@ -3,9 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function () {
+        const saved = localStorage.getItem('theme');
+        document.documentElement.setAttribute('data-theme', saved ?? 'dark');
+      })();
+    </script>
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'"
+      content="default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'"
     />
     <meta name="referrer" content="no-referrer" />
     <title>Iron Letter — Asymmetric Encryption in the Browser</title>
@@ -14,6 +20,9 @@
   <body class="min-h-screen bg-zinc-950 text-zinc-100 antialiased">
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <div id="app"></div>
+    <footer style="text-align:center; padding: 1.5rem; font-size: 0.85rem; opacity: 0.7; margin-top: 2rem;">
+      Whether you eat or drink or whatever you do, do it all for the glory of God. — 1 Corinthians 10:31
+    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

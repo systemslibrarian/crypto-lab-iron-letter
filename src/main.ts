@@ -42,6 +42,7 @@ let selfTestState: SelfTestState = {
 };
 let globalListenersBound = false;
 let deepLinkRecipient: { algo: Exclude<Tab, "compare">; publicKeyB64: string } | null = null;
+type Theme = "dark" | "light";
 
 const state: Record<"ecies" | "rsa2048" | "rsa4096", AlgoState> = {
   ecies: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics() },
@@ -53,10 +54,38 @@ const state: Record<"ecies" | "rsa2048" | "rsa4096", AlgoState> = {
 
 const app = document.getElementById("app")!;
 
+function getCurrentTheme(): Theme {
+  return document.documentElement.getAttribute("data-theme") === "light" ? "light" : "dark";
+}
+
+function getThemeButtonState(theme: Theme): { icon: string; ariaLabel: string } {
+  if (theme === "dark") {
+    return { icon: "🌙", ariaLabel: "Switch to light mode" };
+  }
+  return { icon: "☀️", ariaLabel: "Switch to dark mode" };
+}
+
+function applyTheme(theme: Theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("theme", theme);
+  const btn = document.getElementById("btn-theme") as HTMLButtonElement | null;
+  if (!btn) return;
+  const next = getThemeButtonState(theme);
+  btn.textContent = next.icon;
+  btn.setAttribute("aria-label", next.ariaLabel);
+}
+
 function render() {
+  const themeState = getThemeButtonState(getCurrentTheme());
   app.innerHTML = `
     <div class="max-w-4xl mx-auto px-4 py-8">
-      <header class="mb-8 text-center">
+      <header class="mb-8 text-center relative">
+        <button
+          id="btn-theme"
+          type="button"
+          class="theme-toggle"
+          aria-label="${themeState.ariaLabel}"
+        >${themeState.icon}</button>
         <h1 class="text-3xl font-bold tracking-tight text-zinc-100">
           <span class="text-amber-400">⛒</span> Iron Letter
         </h1>
@@ -365,6 +394,11 @@ function renderHowItWorksModal(): string {
 // ── Event Binding ────────────────────────────────────────────────────
 
 function bindEvents() {
+  document.getElementById("btn-theme")?.addEventListener("click", () => {
+    const nextTheme: Theme = getCurrentTheme() === "dark" ? "light" : "dark";
+    applyTheme(nextTheme);
+  });
+
   // Tab switching
   document.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -593,6 +627,10 @@ function handleDeepLink() {
 }
 
 // ── Init ─────────────────────────────────────────────────────────────
+
+if (!document.documentElement.getAttribute("data-theme")) {
+  applyTheme("dark");
+}
 
 render();
 handleDeepLink();

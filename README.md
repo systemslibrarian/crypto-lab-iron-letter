@@ -1,80 +1,35 @@
 # Iron Letter
 
-Asymmetric encryption in the browser — ECIES P-256 vs RSA-OAEP, side by side.  
-Seal a letter. Only one key can open it.
+## What It Is
+
+Iron Letter is a browser-based demo of ECIES P-256 and RSA-OAEP hybrid encryption built on the Web Crypto API. ECIES P-256 combines ECDH, HKDF-SHA256, and AES-256-GCM, while RSA-2048 and RSA-4096 use RSA-OAEP to wrap an AES-256-GCM content key. The problem it solves is public-key message sealing, where anyone can encrypt to a recipient but only the matching private key can decrypt. This is an asymmetric security model, with symmetric AES used inside each hybrid envelope for message confidentiality and integrity.
+
+## When to Use It
+
+- Use it to teach or compare asymmetric envelope-encryption designs, because it shows ECIES P-256 and RSA-OAEP metrics side by side under the same runtime conditions.
+- Use it for client-side experimentation with WebCrypto key generation and ciphertext formats, because all cryptographic operations happen locally in the browser.
+- Use it to demonstrate shareable public-key workflows, because the app can encode public keys into URLs and QR codes without exposing private keys.
+- Do not use it as-is for production key management or compliance-sensitive systems, because it is a demo app and does not provide hardened operational controls.
+
+## Live Demo
 
 **[Live Demo](https://systemslibrarian.github.io/crypto-lab-iron-letter/)**
 
-## What it does
+The demo lets you generate keypairs, seal messages, and open ciphertext for ECIES P-256, RSA-2048, and RSA-4096. You can switch algorithm tabs, inspect timing and size metrics, and compare public-key and ciphertext characteristics in the comparison view. It also includes controls for copying share URLs and generating QR codes for public keys.
 
-Iron Letter is a zero-dependency cryptography demo that runs entirely in the browser using the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API). It implements three asymmetric encryption schemes and lets you compare them head-to-head:
-
-| Algorithm | Public Key | Security Level | Approach |
-|-----------|-----------|---------------|----------|
-| **ECIES P-256** | 65 bytes | 128-bit | ECDH + HKDF + AES-256-GCM |
-| **RSA-2048** | ~294 bytes | 112-bit | RSA-OAEP wraps AES-256-GCM key |
-| **RSA-4096** | ~550 bytes | 128-bit | RSA-OAEP wraps AES-256-GCM key |
-
-### Features
-
-- **Key generation** with timing and size metrics
-- **Encrypt / decrypt** round-trip in each scheme
-- **Strict input validation** for malformed keys and truncated payloads
-- **Startup self-check** that verifies ECIES and RSA pipelines before use
-- **Known-answer vectors** for fixed ECIES, RSA-2048, and RSA-4096 ciphertexts
-- **Side-by-side comparison** table with bar charts
-- **Shareable public key URLs** with QR codes
-- **Deep linking** — send someone a URL pre-loaded with your public key
-- **How It Works** modal explaining both pipelines
-- **No server, no dependencies** — all crypto is WebCrypto, all rendering is vanilla TS
-
-## Getting started
+## How to Run Locally
 
 ```bash
+git clone https://github.com/systemslibrarian/crypto-lab-iron-letter.git
+cd crypto-lab-iron-letter
 npm install
 npm run dev
 ```
 
-Open `http://localhost:5173/crypto-lab-iron-letter/` in a browser.
+No environment variables are required.
 
-## Build & deploy
+## Part of the Crypto-Lab Suite
 
-```bash
-npm run build   # outputs to dist/
-npm test        # unit + crypto validation tests
-npm run test:e2e
-```
+Iron Letter is one module in the broader Crypto-Lab collection at https://systemslibrarian.github.io/crypto-lab/.
 
-GitHub Pages deployment is configured via `.github/workflows/deploy.yml` — pushes to `main` auto-deploy.
-
-## Architecture
-
-```
-src/
-├── crypto/
-│   ├── ecies.ts      # ECIES P-256: ECDH + HKDF-SHA256 + AES-256-GCM
-│   ├── rsa.ts         # RSA-OAEP hybrid: RSA wraps AES key
-│   └── metrics.ts     # Timing and size measurement utilities
-├── keyurl.ts          # Public key ↔ shareable URL encoding
-├── qr.ts              # Pure JS QR code generator (SVG output)
-├── main.ts            # UI rendering, event handling, state management
-├── style.css          # Tailwind CSS entry
-└── vite-env.d.ts      # Vite type declarations
-```
-
-## Security notes
-
-- Private keys are generated and used entirely in the browser via `crypto.subtle`
-- No keys are ever transmitted over the network
-- Share URLs contain only **public** keys
-- All encryption uses authenticated encryption (AES-256-GCM)
-- ECIES uses ephemeral keypairs — a fresh ECDH keypair per message
-- Malformed keys and truncated ciphertexts are rejected before WebCrypto operations run
-- Startup performs a real ECIES and RSA round-trip self-check before showing the demo as healthy
-- A strict GitHub Pages-compatible CSP and `no-referrer` policy are set via document meta tags
-
-## Tech stack
-
-- **Vite** + **TypeScript** (strict mode)
-- **Tailwind CSS** v4
-- **Web Crypto API** — zero external crypto dependencies
+Whether you eat or drink or whatever you do, do it all for the glory of God. — 1 Corinthians 10:31

@@ -24,3 +24,81 @@
 .skip-link:focus {
   top: 0;
 }
+
+.theme-toggle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  border: 1px solid var(--color-zinc-700);
+  background: var(--color-zinc-900);
+  color: var(--color-zinc-200);
+  font-size: 1.1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--color-zinc-800);
+  color: var(--color-zinc-50);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--color-amber-400);
+  outline-offset: 2px;
+}
+
+html[data-theme="light"] body {
+  background-color: var(--color-zinc-100);
+  color: var(--color-zinc-900);
+}
+
+html[data-theme="light"] .bg-zinc-950 {
+  background-color: var(--color-zinc-50) !important;
+}
+
+html[data-theme="light"] .bg-zinc-900 {
+  background-color: var(--color-zinc-100) !important;
+}
+
+html[data-theme="light"] .bg-zinc-800 {
+  background-color: var(--color-zinc-200) !important;
+}
+
+html[data-theme="light"] .text-zinc-100,
+html[data-theme="light"] .text-zinc-200,
+html[data-theme="light"] .text-zinc-300,
+html[data-theme="light"] .text-zinc-400,
+html[data-theme="light"] .text-zinc-500,
+html[data-theme="light"] .text-zinc-600 {
+  color: var(--color-zinc-700) !important;
+}
+
+html[data-theme="light"] .text-zinc-100,
+html[data-theme="light"] .text-zinc-200,
+html[data-theme="light"] .text-zinc-300 {
+  color: var(--color-zinc-900) !important;
+}
+
+html[data-theme="light"] .border-zinc-800,
+html[data-theme="light"] .border-zinc-700,
+html[data-theme="light"] .border-zinc-800\/50 {
+  border-color: var(--color-zinc-300) !important;
+}
+
+html[data-theme="light"] .theme-toggle {
+  border-color: var(--color-zinc-400);
+  background: var(--color-zinc-50);
+  color: var(--color-zinc-800);
+}
+
+html[data-theme="light"] .theme-toggle:hover {
+  background: var(--color-zinc-200);
+  color: var(--color-zinc-900);
+}

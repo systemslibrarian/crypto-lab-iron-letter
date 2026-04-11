@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "deploy": "npm run build && gh-pages -d dist",
     "preview": "vite preview",
     "test": "vitest run src/__tests__",
     "test:e2e": "npm run build && playwright test"
@@ -14,6 +15,7 @@
     "@playwright/test": "^1.59.1",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^25.5.2",
+    "gh-pages": "^6.3.0",
     "tailwindcss": "^4.2.2",
     "typescript": "^6.0.2",
     "vite": "^8.0.3",

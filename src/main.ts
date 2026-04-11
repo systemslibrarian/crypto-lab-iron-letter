@@ -43,6 +43,8 @@ let selfTestState: SelfTestState = {
 let globalListenersBound = false;
 let deepLinkRecipient: { algo: Exclude<Tab, "compare">; publicKeyB64: string } | null = null;
 type Theme = "dark" | "light";
+let copyUrlTimerId: ReturnType<typeof setTimeout> | null = null;
+const qrVisible: Record<"ecies" | "rsa2048" | "rsa4096", boolean> = { ecies: false, rsa2048: false, rsa4096: false };
 
 const state: Record<"ecies" | "rsa2048" | "rsa4096", AlgoState> = {
   ecies: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics() },
@@ -117,6 +119,9 @@ function render() {
         <p class="text-xs text-zinc-600 mt-2">
           All cryptography runs locally via WebCrypto. Private keys never leave your browser.
         </p>
+        <p style="font-size: 0.85rem; opacity: 0.7; margin-top: 1.5rem;">
+          Whether you eat or drink or whatever you do, do it all for the glory of God. — 1 Corinthians 10:31
+        </p>
       </footer>
     </div>
 
@@ -166,7 +171,11 @@ function renderTab(id: Tab, label: string): string {
 function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
   const s = state[algo];
   const m = s.metrics;
-  const recipientPublicKey = deepLinkRecipient?.algo === algo ? deepLinkRecipient.publicKeyB64 : s.publicKeyB64;
+  let recipientPublicKey = s.publicKeyB64;
+  if (deepLinkRecipient?.algo === algo) {
+    recipientPublicKey = deepLinkRecipient.publicKeyB64;
+    deepLinkRecipient = null;
+  }
   const algoLabel =
     algo === "ecies" ? "ECIES P-256" : algo === "rsa2048" ? "RSA-2048" : "RSA-4096";
 
@@ -202,7 +211,7 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
                 <span aria-hidden="true">📱</span> QR Code
               </button>
             </div>
-            <div id="qr-container" class="hidden mt-2"></div>
+            <div id="qr-container" class="${qrVisible[algo] ? '' : 'hidden'} mt-2"></div>
           </div>
         `
             : ""
@@ -394,6 +403,11 @@ function renderHowItWorksModal(): string {
 // ── Event Binding ────────────────────────────────────────────────────
 
 function bindEvents() {
+  if (copyUrlTimerId !== null) {
+    clearTimeout(copyUrlTimerId);
+    copyUrlTimerId = null;
+  }
+
   document.getElementById("btn-theme")?.addEventListener("click", () => {
     const nextTheme: Theme = getCurrentTheme() === "dark" ? "light" : "dark";
     applyTheme(nextTheme);
@@ -436,6 +450,15 @@ function bindEvents() {
   if (currentTab === "compare") return;
   const algo = currentTab;
 
+  // Restore QR content if it was visible before re-render
+  if (qrVisible[algo] && state[algo].publicKeyB64) {
+    const container = document.getElementById("qr-container");
+    if (container) {
+      const url = buildShareUrl(state[algo].publicKeyB64, algo);
+      container.innerHTML = generateQrSvg(url, 200);
+    }
+  }
+
   // Keygen
   document.getElementById("btn-keygen")?.addEventListener("click", async () => {
     await doKeygen(algo);
@@ -460,15 +483,19 @@ function bindEvents() {
     const btn = document.getElementById("btn-copy-url")!;
     btn.textContent = "✓ Copied!";
     announce("Share URL copied to clipboard");
-    setTimeout(() => {
-      btn.textContent = "📋 Copy share URL";
+    if (copyUrlTimerId !== null) clearTimeout(copyUrlTimerId);
+    copyUrlTimerId = setTimeout(() => {
+      copyUrlTimerId = null;
+      const el = document.getElementById("btn-copy-url");
+      if (el) el.textContent = "📋 Copy share URL";
     }, 1500);
   });
 
   // QR code
   document.getElementById("btn-qr")?.addEventListener("click", () => {
     const container = document.getElementById("qr-container")!;
-    if (container.classList.contains("hidden")) {
+    qrVisible[algo] = !qrVisible[algo];
+    if (qrVisible[algo]) {
       const url = buildShareUrl(state[algo].publicKeyB64, algo);
       container.innerHTML = generateQrSvg(url, 200);
       container.classList.remove("hidden");

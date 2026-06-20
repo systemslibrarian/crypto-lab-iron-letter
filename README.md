@@ -15,7 +15,7 @@ Iron Letter is a browser-based demo of ECIES P-256 and RSA-OAEP hybrid encryptio
 
 **[Live Demo](https://systemslibrarian.github.io/crypto-lab-iron-letter/)**
 
-The demo lets you generate keypairs, seal messages, and open ciphertext for ECIES P-256, RSA-2048, and RSA-4096. You can switch algorithm tabs, inspect timing and size metrics, and compare public-key and ciphertext characteristics in the comparison view. It also includes controls for copying share URLs and generating QR codes for public keys.
+The demo lets you generate keypairs, seal messages, and open ciphertext for ECIES P-256, RSA-2048, and RSA-4096. You can switch algorithm tabs, inspect timing and size metrics, and compare public-key and ciphertext characteristics in the comparison view. The Compare tab's **Run Benchmark** button generates a keypair for each algorithm and averages encrypt/decrypt timings over many iterations in a single click, and surfaces each algorithm's approximate security level (NIST SP 800-57) so the key trade-off is explicit — ECIES P-256's 65-byte key is stronger than RSA-2048's far larger one. It also includes controls for copying share URLs, copying ciphertext, and generating QR codes for public keys.
 
 ## How to Run Locally
 

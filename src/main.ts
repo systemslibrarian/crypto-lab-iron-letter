@@ -3,7 +3,7 @@
 import "./style.css";
 import * as ecies from "./crypto/ecies";
 import * as rsa from "./crypto/rsa";
-import { measure, emptyMetrics, type Metrics } from "./crypto/metrics";
+import { measure, measureAverage, emptyMetrics, type Metrics } from "./crypto/metrics";
 import { runStartupSelfTest } from "./crypto/selftest";
 import { buildShareUrl, parseCurrentUrl } from "./keyurl";
 import { generateQrSvg } from "./qr";
@@ -27,6 +27,7 @@ interface AlgoState {
   privateKeyB64: string;
   ciphertext: string;
   metrics: Metrics;
+  sealStatus: { kind: "ok" | "error"; text: string } | null;
 }
 
 type Tab = "ecies" | "rsa2048" | "rsa4096" | "compare";
@@ -47,10 +48,24 @@ let copyUrlTimerId: ReturnType<typeof setTimeout> | null = null;
 const qrVisible: Record<"ecies" | "rsa2048" | "rsa4096", boolean> = { ecies: false, rsa2048: false, rsa4096: false };
 
 const state: Record<"ecies" | "rsa2048" | "rsa4096", AlgoState> = {
-  ecies: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics() },
-  rsa2048: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics() },
-  rsa4096: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics() },
+  ecies: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null },
+  rsa2048: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null },
+  rsa4096: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null },
 };
+
+// Number of iterations the Compare benchmark averages encrypt/decrypt over.
+const BENCH_ITERATIONS = 25;
+const BENCH_MESSAGE = new TextEncoder().encode(
+  "Iron Letter benchmark — the quick brown fox jumps over the lazy dog."
+);
+// Approximate symmetric-equivalent security per NIST SP 800-57. The teaching
+// point: RSA-2048's much larger key is actually *weaker* than P-256.
+const SECURITY_BITS: Record<"ecies" | "rsa2048" | "rsa4096", number> = {
+  ecies: 128,
+  rsa2048: 112,
+  rsa4096: 140,
+};
+let benchmarkRunning = false;
 
 // ── UI Rendering ─────────────────────────────────────────────────────
 
@@ -240,10 +255,20 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
             Seal Letter
           </button>
           ${
+            s.sealStatus?.kind === "error"
+              ? `<div class="text-xs text-red-400 bg-zinc-950 p-3 rounded-lg border border-red-800" role="alert">${escapeHtml(s.sealStatus.text)}</div>`
+              : ""
+          }
+          ${
             s.ciphertext
               ? `
             <div class="mt-3">
-              <label class="text-xs text-zinc-400 block mb-1">Ciphertext (${m.ciphertextSizeBytes} bytes) — ${m.encryptTimeMs.toFixed(1)}ms</label>
+              <div class="flex items-center justify-between mb-1">
+                <label class="text-xs text-zinc-400">Ciphertext (${m.ciphertextSizeBytes} bytes) — ${m.encryptTimeMs.toFixed(1)}ms</label>
+                <button id="btn-copy-ct" aria-label="Copy ciphertext to clipboard" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
+                  <span aria-hidden="true">📋</span> Copy
+                </button>
+              </div>
               <div class="font-mono text-xs text-sky-400 bg-zinc-950 p-3 rounded-lg break-all max-h-32 overflow-y-auto" role="region" aria-label="Encrypted ciphertext">${escapeHtml(s.ciphertext)}</div>
             </div>
           `
@@ -291,10 +316,19 @@ function renderCompare(): string {
 
   return `
     <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
-      <h2 class="text-lg font-semibold text-zinc-200 mb-4"><span aria-hidden="true">📊</span> Side-by-Side Comparison</h2>
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="text-lg font-semibold text-zinc-200"><span aria-hidden="true">📊</span> Side-by-Side Comparison</h2>
+        <button id="btn-benchmark" ${benchmarkRunning ? "disabled" : ""}
+          class="min-h-[44px] px-4 py-2 rounded-lg bg-amber-500 text-zinc-950 font-medium text-sm hover:bg-amber-400 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
+          ${benchmarkRunning ? `<span class="spinner" aria-hidden="true"></span> Benchmarking…` : "⏱ Run Benchmark"}
+        </button>
+      </div>
+      <p class="text-xs text-zinc-500 mb-4">
+        One click generates a keypair for each algorithm and averages encrypt/decrypt over ${BENCH_ITERATIONS} runs — no manual setup needed.
+      </p>
       ${
         !hasData
-          ? `<p class="text-sm text-zinc-500">Generate keys and encrypt messages in each tab first to see comparisons.</p>`
+          ? `<p class="text-sm text-zinc-500">Run the benchmark above, or generate keys and encrypt messages in each tab, to see comparisons.</p>`
           : `
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -305,6 +339,7 @@ function renderCompare(): string {
               </tr>
             </thead>
             <tbody class="text-zinc-300">
+              ${compareRow("Security level", algos.map((a) => `~${SECURITY_BITS[a]}-bit`))}
               ${compareRow("Keygen time", algos.map((a) => fmtMs(state[a].metrics.keygenTimeMs)))}
               ${compareRow("Public key size", algos.map((a) => fmtBytes(state[a].metrics.publicKeySizeBytes)))}
               ${compareRow("Private key size", algos.map((a) => fmtBytes(state[a].metrics.privateKeySizeBytes)))}
@@ -314,6 +349,10 @@ function renderCompare(): string {
             </tbody>
           </table>
         </div>
+        <p class="text-xs text-zinc-500 mt-3">
+          Security level is the approximate symmetric-equivalent strength (NIST SP 800-57). Note the takeaway:
+          RSA-2048's far larger key is actually <em>weaker</em> than ECIES P-256's 65-byte key.
+        </p>
 
         <!-- Key size visual bar chart -->
         <div class="mt-6">
@@ -447,6 +486,11 @@ function bindEvents() {
     });
   });
 
+  // Benchmark (Compare tab)
+  document.getElementById("btn-benchmark")?.addEventListener("click", () => {
+    void runBenchmark();
+  });
+
   if (currentTab === "compare") return;
   const algo = currentTab;
 
@@ -460,20 +504,33 @@ function bindEvents() {
   }
 
   // Keygen
-  document.getElementById("btn-keygen")?.addEventListener("click", async () => {
-    await doKeygen(algo);
+  document.getElementById("btn-keygen")?.addEventListener("click", async (e) => {
+    await withBusy(e.currentTarget as HTMLButtonElement, "Generating…", () => doKeygen(algo));
     render();
   });
 
   // Seal
-  document.getElementById("btn-seal")?.addEventListener("click", async () => {
-    await doSeal(algo);
+  document.getElementById("btn-seal")?.addEventListener("click", async (e) => {
+    await withBusy(e.currentTarget as HTMLButtonElement, "Sealing…", () => doSeal(algo));
     render();
   });
 
   // Open
-  document.getElementById("btn-open")?.addEventListener("click", async () => {
-    await doOpen(algo);
+  document.getElementById("btn-open")?.addEventListener("click", async (e) => {
+    await withBusy(e.currentTarget as HTMLButtonElement, "Opening…", () => doOpen(algo));
+  });
+
+  // Copy ciphertext
+  document.getElementById("btn-copy-ct")?.addEventListener("click", async () => {
+    await navigator.clipboard.writeText(state[algo].ciphertext);
+    // currentTarget is null after the await, so re-query the button.
+    const btn = document.getElementById("btn-copy-ct");
+    if (btn) btn.textContent = "✓ Copied!";
+    announce("Ciphertext copied to clipboard");
+    setTimeout(() => {
+      const el = document.getElementById("btn-copy-ct");
+      if (el) el.innerHTML = `<span aria-hidden="true">📋</span> Copy`;
+    }, 1500);
   });
 
   // Copy share URL
@@ -535,10 +592,15 @@ async function doKeygen(algo: "ecies" | "rsa2048" | "rsa4096") {
 
 async function doSeal(algo: "ecies" | "rsa2048" | "rsa4096") {
   const s = state[algo];
+  s.sealStatus = null;
   const recipientPkB64 = (document.getElementById("seal-recipient-pk") as HTMLInputElement).value.trim();
   const message = (document.getElementById("seal-message") as HTMLTextAreaElement).value;
 
-  if (!recipientPkB64 || !message) return;
+  if (!recipientPkB64 || !message) {
+    s.sealStatus = { kind: "error", text: "Enter a recipient public key and a message to seal." };
+    announce(s.sealStatus.text);
+    return;
+  }
 
   const plaintext = new TextEncoder().encode(message);
   try {
@@ -556,10 +618,11 @@ async function doSeal(algo: "ecies" | "rsa2048" | "rsa4096") {
       s.metrics.encryptTimeMs = timeMs;
       s.metrics.ciphertextSizeBytes = envelope.wrappedKey.length + envelope.iv.length + envelope.ciphertext.length;
     }
+    announce(`Letter sealed — ${s.metrics.ciphertextSizeBytes} bytes.`);
   } catch (error) {
     const messageText = error instanceof Error ? error.message : "Encryption failed.";
+    s.sealStatus = { kind: "error", text: messageText };
     announce(messageText);
-    showResultMessage(messageText, true);
   }
 }
 
@@ -596,7 +659,75 @@ async function doOpen(algo: "ecies" | "rsa2048" | "rsa4096") {
   }
 }
 
+// ── Benchmark (Compare tab) ──────────────────────────────────────────
+
+async function runBenchmark() {
+  if (benchmarkRunning) return;
+  benchmarkRunning = true;
+  render();
+
+  const algos: ("ecies" | "rsa2048" | "rsa4096")[] = ["ecies", "rsa2048", "rsa4096"];
+  const labels = { ecies: "ECIES P-256", rsa2048: "RSA-2048", rsa4096: "RSA-4096" } as const;
+  try {
+    for (const algo of algos) {
+      announce(`Benchmarking ${labels[algo]}…`);
+      await benchmarkAlgo(algo);
+      render(); // progressively fill the table; button stays disabled until done
+    }
+    announce("Benchmark complete.");
+  } finally {
+    benchmarkRunning = false;
+    render();
+  }
+}
+
+async function benchmarkAlgo(algo: "ecies" | "rsa2048" | "rsa4096") {
+  // Keygen is the expensive, high-variance op — a single sample is honest.
+  await doKeygen(algo);
+  const s = state[algo];
+  if (!s.publicKey || !s.privateKey) return;
+
+  if (algo === "ecies") {
+    const enc = await measureAverage(() => ecies.seal(s.publicKey!, BENCH_MESSAGE), BENCH_ITERATIONS);
+    const envelope = enc.result;
+    s.ciphertext = ecies.serializeEnvelope(envelope);
+    s.metrics.encryptTimeMs = enc.timeMs;
+    s.metrics.ciphertextSizeBytes = envelope.ephemeralPub.length + envelope.iv.length + envelope.ciphertext.length;
+    const dec = await measureAverage(() => ecies.open(s.privateKey!, envelope), BENCH_ITERATIONS);
+    s.metrics.decryptTimeMs = dec.timeMs;
+  } else {
+    const keySize = algo === "rsa2048" ? 2048 : 4096;
+    const enc = await measureAverage(() => rsa.seal(s.publicKey!, BENCH_MESSAGE), BENCH_ITERATIONS);
+    const envelope = enc.result;
+    s.ciphertext = rsa.serializeEnvelope(envelope, keySize as rsa.RsaKeySize);
+    s.metrics.encryptTimeMs = enc.timeMs;
+    s.metrics.ciphertextSizeBytes = envelope.wrappedKey.length + envelope.iv.length + envelope.ciphertext.length;
+    const dec = await measureAverage(() => rsa.open(s.privateKey!, envelope), BENCH_ITERATIONS);
+    s.metrics.decryptTimeMs = dec.timeMs;
+  }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────
+
+async function withBusy(
+  btn: HTMLButtonElement,
+  busyLabel: string,
+  fn: () => Promise<void>
+): Promise<void> {
+  const original = btn.innerHTML;
+  btn.disabled = true;
+  btn.setAttribute("aria-busy", "true");
+  btn.innerHTML = `<span class="spinner" aria-hidden="true"></span> ${escapeHtml(busyLabel)}`;
+  try {
+    await fn();
+  } finally {
+    // The surrounding handler usually re-renders (replacing this node), but
+    // restore state anyway for the open button, which does not re-render.
+    btn.disabled = false;
+    btn.removeAttribute("aria-busy");
+    btn.innerHTML = original;
+  }
+}
 
 function escapeHtml(s: string): string {
   const div = document.createElement("div");

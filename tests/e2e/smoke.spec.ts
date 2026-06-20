@@ -21,6 +21,32 @@ test.describe("Iron Letter smoke", () => {
     await expect(page.locator("#open-plaintext")).toHaveText("Browser smoke test message");
   });
 
+  test("shows a seal error in the Seal panel when inputs are missing", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText("WebCrypto self-check passed")).toBeVisible();
+
+    await page.getByRole("button", { name: /Generate ECIES P-256 Keypair/i }).click();
+    await expect(page.getByText(/Public Key \(65 bytes\)/)).toBeVisible();
+
+    // Recipient key auto-fills, but the message is empty: sealing must surface
+    // an inline error (not silently no-op, and not buried in the Open panel).
+    await page.getByRole("button", { name: "Seal Letter" }).click();
+    await expect(page.getByRole("alert")).toContainText(/recipient public key and a message/i);
+  });
+
+  test("Run Benchmark populates the comparison table in one click", async ({ page }) => {
+    await page.goto("/");
+    await expect(page.getByText("WebCrypto self-check passed")).toBeVisible();
+
+    await page.getByRole("tab", { name: "Compare" }).click();
+    await page.getByRole("button", { name: /Run Benchmark/i }).click();
+
+    // Security-level row is static; metric rows fill in as the benchmark runs.
+    await expect(page.getByRole("cell", { name: "~128-bit" })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "65 B" })).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole("button", { name: /Run Benchmark/i })).toBeEnabled({ timeout: 30000 });
+  });
+
   test("supports deep-linked public keys", async ({ page }) => {
     await page.goto("/");
     await expect(page.getByText("WebCrypto self-check passed")).toBeVisible();

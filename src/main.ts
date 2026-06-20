@@ -28,6 +28,7 @@ interface AlgoState {
   ciphertext: string;
   metrics: Metrics;
   sealStatus: { kind: "ok" | "error"; text: string } | null;
+  recipientB64: string; // recipient public key from a deep link; persists across re-renders
 }
 
 type Tab = "ecies" | "rsa2048" | "rsa4096" | "compare";
@@ -42,15 +43,14 @@ let selfTestState: SelfTestState = {
   message: "Running WebCrypto self-check...",
 };
 let globalListenersBound = false;
-let deepLinkRecipient: { algo: Exclude<Tab, "compare">; publicKeyB64: string } | null = null;
 type Theme = "dark" | "light";
 let copyUrlTimerId: ReturnType<typeof setTimeout> | null = null;
 const qrVisible: Record<"ecies" | "rsa2048" | "rsa4096", boolean> = { ecies: false, rsa2048: false, rsa4096: false };
 
 const state: Record<"ecies" | "rsa2048" | "rsa4096", AlgoState> = {
-  ecies: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null },
-  rsa2048: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null },
-  rsa4096: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null },
+  ecies: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null, recipientB64: "" },
+  rsa2048: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null, recipientB64: "" },
+  rsa4096: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null, recipientB64: "" },
 };
 
 // Number of iterations the Compare benchmark averages encrypt/decrypt over.
@@ -186,11 +186,10 @@ function renderTab(id: Tab, label: string): string {
 function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
   const s = state[algo];
   const m = s.metrics;
-  let recipientPublicKey = s.publicKeyB64;
-  if (deepLinkRecipient?.algo === algo) {
-    recipientPublicKey = deepLinkRecipient.publicKeyB64;
-    deepLinkRecipient = null;
-  }
+  // A deep-linked recipient key takes precedence; otherwise default to your own
+  // generated key for convenient self-sends. recipientB64 persists in state so
+  // later re-renders (e.g. the boot self-test finishing) don't wipe it.
+  const recipientPublicKey = s.recipientB64 || s.publicKeyB64;
   const algoLabel =
     algo === "ecies" ? "ECIES P-256" : algo === "rsa2048" ? "RSA-2048" : "RSA-4096";
 
@@ -780,7 +779,7 @@ function handleDeepLink() {
   if (!params) return;
 
   currentTab = params.algo === "ecies" ? "ecies" : params.algo === "rsa2048" ? "rsa2048" : "rsa4096";
-  deepLinkRecipient = { algo: currentTab, publicKeyB64: params.pk };
+  state[currentTab].recipientB64 = params.pk;
   render();
 }
 

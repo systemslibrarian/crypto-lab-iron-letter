@@ -134,6 +134,14 @@ function render() {
         <p class="text-xs text-zinc-600 mt-2">
           All cryptography runs locally via WebCrypto. Private keys never leave your browser.
         </p>
+        <p class="text-xs text-zinc-600 mt-2">
+          Related demos:
+          <a href="https://systemslibrarian.github.io/crypto-lab-rsa-forge/" target="_blank" rel="noreferrer" class="underline underline-offset-4 hover:text-zinc-300 transition-colors">crypto-lab-rsa-forge</a> ·
+          <a href="https://systemslibrarian.github.io/crypto-lab-envelope-kms/" target="_blank" rel="noreferrer" class="underline underline-offset-4 hover:text-zinc-300 transition-colors">crypto-lab-envelope-kms</a> ·
+          <a href="https://systemslibrarian.github.io/crypto-lab-ibe-gate/" target="_blank" rel="noreferrer" class="underline underline-offset-4 hover:text-zinc-300 transition-colors">crypto-lab-ibe-gate</a> ·
+          <a href="https://systemslibrarian.github.io/crypto-lab-elgamal-plain/" target="_blank" rel="noreferrer" class="underline underline-offset-4 hover:text-zinc-300 transition-colors">crypto-lab-elgamal-plain</a> ·
+          <a href="https://systemslibrarian.github.io/crypto-lab-curve-lens/" target="_blank" rel="noreferrer" class="underline underline-offset-4 hover:text-zinc-300 transition-colors">crypto-lab-curve-lens</a>
+        </p>
         <p style="font-size: 0.85rem; opacity: 0.7; margin-top: 1.5rem;">
           Whether you eat or drink or whatever you do, do it all for the glory of God. — 1 Corinthians 10:31
         </p>

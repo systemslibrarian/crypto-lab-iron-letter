@@ -9,10 +9,12 @@
     "deploy": "npm run build && gh-pages -d dist",
     "preview": "vite preview",
     "test": "vitest run src/__tests__",
-    "test:e2e": "npm run build && playwright test"
+    "test:e2e": "npm run build && playwright test",
+    "test:a11y": "npm run build && playwright test e2e/a11y.spec.ts"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.2.2",
     "@types/node": "^25.5.2",
     "gh-pages": "^6.3.0",

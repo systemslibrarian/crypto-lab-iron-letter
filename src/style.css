@@ -40,7 +40,7 @@ button:disabled {
   left: 0;
   z-index: 100;
   padding: 0.5rem 1rem;
-  background: #f59e0b;
+  background-color: #f59e0b;
   color: #000;
   font-weight: 600;
 }
@@ -56,7 +56,7 @@ button:disabled {
   height: 2.6rem;
   border-radius: 50%;
   border: 1px solid var(--color-zinc-700);
-  background: var(--color-zinc-900);
+  background-color: var(--color-zinc-900);
   color: var(--color-zinc-200);
   font-size: 1.1rem;
   line-height: 1;
@@ -68,13 +68,26 @@ button:disabled {
 }
 
 .theme-toggle:hover {
-  background: var(--color-zinc-800);
+  background-color: var(--color-zinc-800);
   color: var(--color-zinc-50);
 }
 
 .theme-toggle:focus-visible {
   outline: 2px solid var(--color-amber-400);
   outline-offset: 2px;
+}
+
+/* Paint the canvas on <html> itself — WebKit reports body->canvas background
+   propagation as transparent, which breaks axe contrast checks — and declare
+   color-scheme so native UI (scrollbars, form controls) matches each theme. */
+html {
+  color-scheme: dark;
+  background-color: var(--color-zinc-950);
+}
+
+html[data-theme="light"] {
+  color-scheme: light;
+  background-color: var(--color-zinc-100);
 }
 
 html[data-theme="light"] body {
@@ -109,6 +122,34 @@ html[data-theme="light"] .text-zinc-300 {
   color: var(--color-zinc-900) !important;
 }
 
+/* Accent text tuned for dark backgrounds needs darker hues on the light
+   palette to stay >= 4.5:1 (e.g. amber-400 on zinc-100 is only 1.5:1). */
+html[data-theme="light"] .text-amber-400 {
+  color: var(--color-amber-700) !important;
+}
+
+html[data-theme="light"] .border-amber-400 {
+  border-color: var(--color-amber-700) !important;
+}
+
+html[data-theme="light"] .text-emerald-400,
+html[data-theme="light"] .text-emerald-500 {
+  color: var(--color-emerald-700) !important;
+}
+
+html[data-theme="light"] .text-sky-400 {
+  color: var(--color-sky-700) !important;
+}
+
+html[data-theme="light"] .text-red-400,
+html[data-theme="light"] .text-red-500 {
+  color: var(--color-red-700) !important;
+}
+
+html[data-theme="light"] .bg-red-950 {
+  background-color: var(--color-red-100) !important;
+}
+
 html[data-theme="light"] .border-zinc-800,
 html[data-theme="light"] .border-zinc-700,
 html[data-theme="light"] .border-zinc-800\/50 {
@@ -117,11 +158,11 @@ html[data-theme="light"] .border-zinc-800\/50 {
 
 html[data-theme="light"] .theme-toggle {
   border-color: var(--color-zinc-400);
-  background: var(--color-zinc-50);
+  background-color: var(--color-zinc-50);
   color: var(--color-zinc-800);
 }
 
 html[data-theme="light"] .theme-toggle:hover {
-  background: var(--color-zinc-200);
+  background-color: var(--color-zinc-200);
   color: var(--color-zinc-900);
 }

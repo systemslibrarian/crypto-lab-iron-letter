@@ -109,7 +109,7 @@ function render() {
         <p class="mt-2 text-sm text-zinc-400">
           Asymmetric encryption in the browser — ECIES P-256 vs RSA-OAEP, side by side.
         </p>
-        <p class="text-xs text-zinc-600 mt-1">Seal a letter. Only one key can open it.</p>
+        <p class="text-xs text-zinc-400 mt-1">Seal a letter. Only one key can open it.</p>
       </header>
 
       ${renderSelfTest()}
@@ -128,13 +128,13 @@ function render() {
       <div aria-live="polite" aria-atomic="true" id="status-announcer" class="sr-only"></div>
 
       <footer class="mt-12 pt-6 border-t border-zinc-800 text-center">
-        <button id="btn-how" class="text-xs text-zinc-500 hover:text-zinc-300 underline underline-offset-4 transition-colors">
+        <button id="btn-how" class="text-xs text-zinc-400 hover:text-zinc-300 underline underline-offset-4 transition-colors">
           How It Works
         </button>
-        <p class="text-xs text-zinc-600 mt-2">
+        <p class="text-xs text-zinc-400 mt-2">
           All cryptography runs locally via WebCrypto. Private keys never leave your browser.
         </p>
-        <p class="text-xs text-zinc-600 mt-2">
+        <p class="text-xs text-zinc-400 mt-2">
           Related demos:
           <a href="https://systemslibrarian.github.io/crypto-lab-rsa-forge/" target="_blank" rel="noreferrer" class="underline underline-offset-4 hover:text-zinc-300 transition-colors">crypto-lab-rsa-forge</a> ·
           <a href="https://systemslibrarian.github.io/crypto-lab-envelope-kms/" target="_blank" rel="noreferrer" class="underline underline-offset-4 hover:text-zinc-300 transition-colors">crypto-lab-envelope-kms</a> ·
@@ -142,7 +142,7 @@ function render() {
           <a href="https://systemslibrarian.github.io/crypto-lab-elgamal-plain/" target="_blank" rel="noreferrer" class="underline underline-offset-4 hover:text-zinc-300 transition-colors">crypto-lab-elgamal-plain</a> ·
           <a href="https://systemslibrarian.github.io/crypto-lab-curve-lens/" target="_blank" rel="noreferrer" class="underline underline-offset-4 hover:text-zinc-300 transition-colors">crypto-lab-curve-lens</a>
         </p>
-        <p style="font-size: 0.85rem; opacity: 0.7; margin-top: 1.5rem;">
+        <p class="text-zinc-400" style="font-size: 0.85rem; margin-top: 1.5rem;">
           Whether you eat or drink or whatever you do, do it all for the glory of God. — 1 Corinthians 10:31
         </p>
       </footer>
@@ -156,7 +156,7 @@ function render() {
 
 function renderSelfTest(): string {
   if (!checkWebCrypto()) {
-    return `<div class="text-sm text-red-500 text-center mb-4 p-3 border border-red-800 rounded-lg bg-red-950" role="alert">
+    return `<div class="text-sm text-red-400 text-center mb-4 p-3 border border-red-800 rounded-lg bg-red-950" role="alert">
     WebCrypto unavailable. This app requires a secure context (HTTPS or localhost).
   </div>`;
   }
@@ -169,7 +169,7 @@ function renderSelfTest(): string {
     return `<div class="text-xs text-emerald-500 text-center mb-4" role="status">${selfTestState.message}</div>`;
   }
 
-  return `<div class="text-sm text-red-500 text-center mb-4 p-3 border border-red-800 rounded-lg bg-red-950" role="alert">
+  return `<div class="text-sm text-red-400 text-center mb-4 p-3 border border-red-800 rounded-lg bg-red-950" role="alert">
     ${escapeHtml(selfTestState.message)}
   </div>`;
 }
@@ -220,7 +220,7 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
             <div>
               <label class="text-xs text-zinc-400 block mb-1">Private Key (${m.privateKeySizeBytes} bytes)</label>
               <details>
-                <summary class="text-xs text-zinc-600 cursor-pointer hover:text-zinc-400">Reveal private key</summary>
+                <summary class="text-xs text-zinc-400 cursor-pointer hover:text-zinc-300">Reveal private key</summary>
                 <div class="font-mono text-xs text-red-400 bg-zinc-950 p-3 rounded-lg break-all mt-1 max-h-24 overflow-y-auto">${escapeHtml(s.privateKeyB64)}</div>
               </details>
             </div>
@@ -258,7 +258,7 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
               placeholder="Type your secret message..."
             ></textarea>
           </div>
-          <button id="btn-seal" class="min-h-[44px] px-4 py-2 rounded-lg bg-emerald-600 text-white font-medium text-sm hover:bg-emerald-500 transition-colors focus:outline-2 focus:outline-emerald-400 focus:outline-offset-2">
+          <button id="btn-seal" class="min-h-[44px] px-4 py-2 rounded-lg bg-emerald-700 text-white font-medium text-sm hover:bg-emerald-600 transition-colors focus:outline-2 focus:outline-emerald-400 focus:outline-offset-2">
             Seal Letter
           </button>
           ${
@@ -330,12 +330,12 @@ function renderCompare(): string {
           ${benchmarkRunning ? `<span class="spinner" aria-hidden="true"></span> Benchmarking…` : "⏱ Run Benchmark"}
         </button>
       </div>
-      <p class="text-xs text-zinc-500 mb-4">
+      <p class="text-xs text-zinc-400 mb-4">
         One click generates a keypair for each algorithm and averages encrypt/decrypt over ${BENCH_ITERATIONS} runs — no manual setup needed.
       </p>
       ${
         !hasData
-          ? `<p class="text-sm text-zinc-500">Run the benchmark above, or generate keys and encrypt messages in each tab, to see comparisons.</p>`
+          ? `<p class="text-sm text-zinc-400">Run the benchmark above, or generate keys and encrypt messages in each tab, to see comparisons.</p>`
           : `
         <div class="overflow-x-auto">
           <table class="w-full text-sm">
@@ -356,7 +356,7 @@ function renderCompare(): string {
             </tbody>
           </table>
         </div>
-        <p class="text-xs text-zinc-500 mt-3">
+        <p class="text-xs text-zinc-400 mt-3">
           Security level is the approximate symmetric-equivalent strength (NIST SP 800-57). Note the takeaway:
           RSA-2048's far larger key is actually <em>weaker</em> than ECIES P-256's 65-byte key.
         </p>
@@ -409,7 +409,7 @@ function renderHowItWorksModal(): string {
       <div class="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-8">
         <div class="flex justify-between items-start mb-6">
           <h2 id="modal-title" class="text-xl font-bold text-zinc-100">How It Works</h2>
-          <button id="btn-close-modal" class="text-zinc-500 hover:text-zinc-300 text-xl" aria-label="Close">✕</button>
+          <button id="btn-close-modal" class="text-zinc-400 hover:text-zinc-300 text-xl" aria-label="Close">✕</button>
         </div>
 
         <div class="space-y-6 text-sm text-zinc-300">
@@ -422,7 +422,7 @@ function renderHowItWorksModal(): string {
               <p>4. AES-256-GCM encrypt message with derived key</p>
               <p>5. Output: ephemeral public key ‖ IV ‖ ciphertext</p>
             </div>
-            <p class="mt-2 text-zinc-500 text-xs">Public key: 65 bytes (uncompressed point). Same 128-bit security level as RSA-3072.</p>
+            <p class="mt-2 text-zinc-400 text-xs">Public key: 65 bytes (uncompressed point). Same 128-bit security level as RSA-3072.</p>
           </div>
 
           <div>
@@ -433,7 +433,7 @@ function renderHowItWorksModal(): string {
               <p>3. AES-256-GCM encrypt message with AES key</p>
               <p>4. Output: wrapped AES key ‖ IV ‖ ciphertext</p>
             </div>
-            <p class="mt-2 text-zinc-500 text-xs">RSA-2048 public key: ~294 bytes (SPKI). RSA-4096: ~550 bytes.</p>
+            <p class="mt-2 text-zinc-400 text-xs">RSA-2048 public key: ~294 bytes (SPKI). RSA-4096: ~550 bytes.</p>
           </div>
 
           <div>

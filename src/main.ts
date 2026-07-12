@@ -135,11 +135,12 @@ function render() {
       <header class="cl-hero">
         <div class="cl-hero-main">
           <h1 class="cl-hero-title text-zinc-100"><span class="text-amber-400">⛒</span> Iron Letter</h1>
-          <p class="cl-hero-sub text-zinc-400">ECIES P-256 · RSA-OAEP hybrid public-key encryption</p>
+          <p class="cl-hero-sub text-zinc-400">ECIES P-256 · RSA-OAEP · hybrid public-key encryption</p>
+          <p class="cl-hero-desc text-zinc-300">Seals a message to a recipient's public key with ECIES (ECDH + HKDF + AES-GCM) and RSA-OAEP side by side, so you can compare their keys, ciphertexts, and timings live in WebCrypto.</p>
         </div>
         <aside class="cl-hero-why" aria-label="Why it matters">
           <span class="cl-hero-why-label text-amber-400">WHY IT MATTERS</span>
-          <p class="cl-hero-why-text text-zinc-300">Seal a message to someone's public key and only their private key can open it. This compares two ways to do it — ECIES (ECDH + HKDF + AES-GCM) and RSA-OAEP — showing how ECC matches RSA's security with far smaller keys.</p>
+          <p class="cl-hero-why-text text-zinc-300">Public-key sealing lets anyone send you a secret without ever sharing one first. ECC reaches RSA-grade security with far smaller keys, which is why modern protocols pick it — smaller keys mean faster handshakes on every device.</p>
         </aside>
       </header>
 

@@ -126,20 +126,21 @@ function render() {
   const themeState = getThemeButtonState(getCurrentTheme());
   app.innerHTML = `
     <div class="max-w-4xl mx-auto px-4 py-8">
-      <header class="mb-8 text-center relative">
-        <button
-          id="btn-theme"
-          type="button"
-          class="theme-toggle"
-          aria-label="${themeState.ariaLabel}"
-        >${themeState.icon}</button>
-        <h1 class="text-3xl font-bold tracking-tight text-zinc-100">
-          <span class="text-amber-400">⛒</span> Iron Letter
-        </h1>
-        <p class="mt-2 text-sm text-zinc-400">
-          Asymmetric encryption in the browser — ECIES P-256 vs RSA-OAEP, side by side.
-        </p>
-        <p class="text-xs text-zinc-400 mt-1">Seal a letter. Only one key can open it.</p>
+      <button
+        id="btn-theme"
+        type="button"
+        class="theme-toggle"
+        aria-label="${themeState.ariaLabel}"
+      >${themeState.icon}</button>
+      <header class="cl-hero">
+        <div class="cl-hero-main">
+          <h1 class="cl-hero-title text-zinc-100"><span class="text-amber-400">⛒</span> Iron Letter</h1>
+          <p class="cl-hero-sub text-zinc-400">ECIES P-256 · RSA-OAEP hybrid public-key encryption</p>
+        </div>
+        <aside class="cl-hero-why" aria-label="Why it matters">
+          <span class="cl-hero-why-label text-amber-400">WHY IT MATTERS</span>
+          <p class="cl-hero-why-text text-zinc-300">Seal a message to someone's public key and only their private key can open it. This compares two ways to do it — ECIES (ECDH + HKDF + AES-GCM) and RSA-OAEP — showing how ECC matches RSA's security with far smaller keys.</p>
+        </aside>
       </header>
 
       ${renderSelfTest()}

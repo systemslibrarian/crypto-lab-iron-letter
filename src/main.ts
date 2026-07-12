@@ -3,6 +3,7 @@
 import "./style.css";
 import * as ecies from "./crypto/ecies";
 import * as rsa from "./crypto/rsa";
+import type { EcdhDemo } from "./crypto/ecies";
 import { measure, measureAverage, emptyMetrics, type Metrics } from "./crypto/metrics";
 import { runStartupSelfTest } from "./crypto/selftest";
 import { buildShareUrl, parseCurrentUrl } from "./keyurl";
@@ -20,15 +21,36 @@ function checkWebCrypto(): boolean {
 
 // ── State ────────────────────────────────────────────────────────────
 
-interface AlgoState {
+// Two-party ("Alice → Bob") model. Each party gets its OWN keypair so a
+// learner encrypts to SOMEONE ELSE's public key — the whole point of asymmetry.
+// `bob` is the recipient (his public key is the seal default, his private key
+// opens the letter). `eve` is an eavesdropper whose private key is offered as a
+// one-click "wrong key" so decryption visibly fails with a GCM auth error.
+interface Party {
   publicKey: CryptoKey | null;
   privateKey: CryptoKey | null;
   publicKeyB64: string;
   privateKeyB64: string;
+}
+
+interface AlgoState {
+  // "You"/Alice keep the historical field names for backward compatibility
+  // (deep links, share URLs, self-test all reference these).
+  publicKey: CryptoKey | null;
+  privateKey: CryptoKey | null;
+  publicKeyB64: string;
+  privateKeyB64: string;
+  bob: Party; // the recipient
+  eve: Party; // the eavesdropper (wrong key for the failure demo)
   ciphertext: string;
   metrics: Metrics;
   sealStatus: { kind: "ok" | "error"; text: string } | null;
+  ecdhDemo: EcdhDemo | null; // ECIES convergence panel
   recipientB64: string; // recipient public key from a deep link; persists across re-renders
+}
+
+function emptyParty(): Party {
+  return { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "" };
 }
 
 type Tab = "ecies" | "rsa2048" | "rsa4096" | "compare";
@@ -47,10 +69,18 @@ type Theme = "dark" | "light";
 let copyUrlTimerId: ReturnType<typeof setTimeout> | null = null;
 const qrVisible: Record<"ecies" | "rsa2048" | "rsa4096", boolean> = { ecies: false, rsa2048: false, rsa4096: false };
 
+function emptyAlgoState(): AlgoState {
+  return {
+    publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "",
+    bob: emptyParty(), eve: emptyParty(),
+    ciphertext: "", metrics: emptyMetrics(), sealStatus: null, ecdhDemo: null, recipientB64: "",
+  };
+}
+
 const state: Record<"ecies" | "rsa2048" | "rsa4096", AlgoState> = {
-  ecies: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null, recipientB64: "" },
-  rsa2048: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null, recipientB64: "" },
-  rsa4096: { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "", ciphertext: "", metrics: emptyMetrics(), sealStatus: null, recipientB64: "" },
+  ecies: emptyAlgoState(),
+  rsa2048: emptyAlgoState(),
+  rsa4096: emptyAlgoState(),
 };
 
 // Number of iterations the Compare benchmark averages encrypt/decrypt over.
@@ -191,37 +221,231 @@ function renderTab(id: Tab, label: string): string {
   >${label}</button>`;
 }
 
+// ── Teaching helpers: glossary, hex, byte-layout strip ───────────────
+
+// Inline glossary: dotted-underline term with an accessible <abbr>-style
+// tooltip. `title` gives the native hover/focus tooltip and aria-label gives
+// screen-reader users the same definition. Kept short so newcomers get an
+// on-ramp for jargon without leaving the page.
+const GLOSSARY: Record<string, string> = {
+  ECIES:
+    "Elliptic Curve Integrated Encryption Scheme: a standard hybrid recipe combining ECDH + a KDF + a symmetric cipher.",
+  ECDH:
+    "Elliptic-Curve Diffie–Hellman: mixes one side's private key with the other side's public key. Both parties independently arrive at the SAME shared secret.",
+  HKDF:
+    "HMAC-based Key Derivation Function: stretches/cleans a raw shared secret into a uniformly-random symmetric key of the size you need.",
+  ephemeral:
+    "A throwaway keypair generated fresh for a single message and discarded. Only its public half ships inside the envelope; its private half is destroyed.",
+  OAEP:
+    "Optimal Asymmetric Encryption Padding: the randomized padding that makes RSA encryption safe (never encrypt raw RSA without it).",
+  SPKI:
+    "SubjectPublicKeyInfo: the standard DER byte format WebCrypto exports a public key in.",
+  PKCS8:
+    "PKCS#8: the standard DER byte format WebCrypto exports a private key in.",
+  "AES-GCM":
+    "AES in Galois/Counter Mode: authenticated encryption. The 16-byte tag verifies integrity — decryption with the wrong key fails loudly instead of returning garbage.",
+  "symmetric-equivalent bits":
+    "How many bits of a symmetric key (like AES) would give the same brute-force resistance. 128-bit ≈ 3.4×10^38 operations. It lets you compare RSA and ECC key strength on one scale.",
+  base64url:
+    "URL-safe Base64 text encoding of raw bytes (uses - and _ instead of + and /, no padding). Just a way to print binary keys/ciphertext as ASCII.",
+};
+
+function glossaryId(term: string): string {
+  return "gloss-" + term.replace(/[^A-Za-z0-9]/g, "-").toLowerCase();
+}
+
+// Renders a dotted-underline term whose definition is available on hover
+// (title) and to assistive tech (aria-describedby → a visually-hidden node).
+function term(t: string, display?: string): string {
+  const def = GLOSSARY[t];
+  const label = display ?? t;
+  if (!def) return escapeHtml(label);
+  const id = glossaryId(t);
+  return `<span class="gloss-term" tabindex="0" role="note" title="${escapeHtml(def)}" aria-describedby="${id}">${escapeHtml(label)}<span id="${id}" class="sr-only">${escapeHtml(def)}</span></span>`;
+}
+
+function toHex(bytes: Uint8Array): string {
+  let out = "";
+  for (const b of bytes) out += b.toString(16).padStart(2, "0");
+  return out;
+}
+
+// A labelled, color-coded byte-layout strip mapping the envelope structure onto
+// the REAL byte counts. Widths are proportional to segment size, so the RSA
+// wrapped-key segment visibly dominates while ECIES's ephemeral-key segment is
+// tiny — the concrete embodiment of "hybrid encryption".
+interface ByteSeg {
+  label: string;
+  bytes: number;
+  cls: string; // background utility class (has AA-contrast dark text)
+  desc: string; // tooltip
+}
+
+function renderByteStrip(segs: ByteSeg[], caption: string): string {
+  const total = segs.reduce((n, s) => n + s.bytes, 0) || 1;
+  const bars = segs
+    .map((seg) => {
+      const pct = Math.max((seg.bytes / total) * 100, 6); // floor so tiny segs stay visible
+      return `<div class="byte-seg ${seg.cls}" style="flex:0 0 ${pct}%" title="${escapeHtml(seg.desc)}">
+        <span class="byte-seg-label">${escapeHtml(seg.label)}</span>
+        <span class="byte-seg-bytes">${seg.bytes} B</span>
+      </div>`;
+    })
+    .join("");
+  const legend = segs
+    .map(
+      (seg) =>
+        `<li class="flex items-center gap-1.5"><span class="byte-swatch ${seg.cls}" aria-hidden="true"></span>${escapeHtml(seg.label)} — ${seg.bytes} bytes</li>`
+    )
+    .join("");
+  return `
+    <div class="mt-3" role="group" aria-label="${escapeHtml(caption)}">
+      <div class="byte-strip flex w-full rounded-lg overflow-hidden border border-zinc-700" aria-hidden="true">${bars}</div>
+      <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">${legend}</ul>
+    </div>`;
+}
+
+function renderCiphertextLayout(algo: "ecies" | "rsa2048" | "rsa4096"): string {
+  const s = state[algo];
+  if (!s.ciphertext) return "";
+  if (algo === "ecies") {
+    const env = ecies.deserializeEnvelope(s.ciphertext);
+    return renderByteStrip(
+      [
+        { label: "Ephemeral public key", bytes: env.ephemeralPub.length, cls: "seg-eph", desc: "The sender's throwaway (ephemeral) P-256 public key, 65 bytes. The recipient combines it with their private key to re-derive the shared secret." },
+        { label: "IV / nonce", bytes: env.iv.length, cls: "seg-iv", desc: "The 12-byte AES-GCM initialization vector (nonce). Random per message; not secret." },
+        { label: "Ciphertext + tag", bytes: env.ciphertext.length, cls: "seg-ct", desc: "The AES-256-GCM encrypted message plus its 16-byte authentication tag." },
+      ],
+      "ECIES envelope byte layout: ephemeral public key, IV, ciphertext and tag"
+    );
+  }
+  const keySize = algo === "rsa2048" ? 2048 : 4096;
+  const env = rsa.deserializeEnvelope(s.ciphertext, keySize as rsa.RsaKeySize);
+  return renderByteStrip(
+    [
+      { label: "Wrapped AES key", bytes: env.wrappedKey.length, cls: "seg-eph", desc: `The random AES-256 key, RSA-OAEP-encrypted to the recipient. Its size equals the RSA modulus: ${keySize / 8} bytes. This is why RSA ciphertext carries a big fixed overhead.` },
+      { label: "IV / nonce", bytes: env.iv.length, cls: "seg-iv", desc: "The 12-byte AES-GCM initialization vector (nonce). Random per message; not secret." },
+      { label: "Ciphertext + tag", bytes: env.ciphertext.length, cls: "seg-ct", desc: "The AES-256-GCM encrypted message plus its 16-byte authentication tag." },
+    ],
+    "RSA hybrid envelope byte layout: wrapped AES key, IV, ciphertext and tag"
+  );
+}
+
+// The ECDH convergence panel — the "aha" of asymmetry made observable.
+// Shows the sender computing (ephemeral private × Bob public) and the receiver
+// computing (Bob private × ephemeral public), both landing on the SAME 32-byte
+// secret, which then flows through HKDF into the AES key. All bytes are REAL.
+function renderEcdhPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
+  if (algo !== "ecies") return "";
+  const demo = state.ecies.ecdhDemo;
+  if (!demo) return "";
+  const senderHex = toHex(demo.senderSecret);
+  const receiverHex = toHex(demo.receiverSecret);
+  // Highlight the shared secret as fixed-width hex so a learner can eyeball that
+  // both columns are byte-for-byte identical. `.ecdh-*` classes carry their own
+  // theme-safe colors (they don't rely on Tailwind zinc classes that flip).
+  const secretRow = (hex: string, label: string) =>
+    `<div class="ecdh-secret" tabindex="0" role="region" aria-label="${label}">${hex.replace(/(.{2})/g, '<span class="ecdh-byte">$1</span>')}</div>`;
+
+  return `
+    <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
+      <h2 class="text-lg font-semibold text-zinc-200 mb-1"><span aria-hidden="true">🤝</span> Why only Bob can open it: the ${term("ECDH")} handshake</h2>
+      <p class="text-xs text-zinc-400 mb-4">
+        Both sides run ${term("ECDH")} but start from different halves — yet they compute the
+        <em>identical</em> 32-byte secret. That is the whole trick: the secret is never sent, only re-derived,
+        and only Bob's private key can re-derive it.
+      </p>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="ecdh-card ecdh-alice">
+          <h3 class="ecdh-card-title ecdh-alice-title">Alice (sender) computes</h3>
+          <p class="ecdh-formula">
+            <span class="ecdh-eph">${term("ephemeral", "ephemeral")} private</span>
+            <span aria-hidden="true">×</span><span class="sr-only">times</span>
+            <span class="ecdh-recip">Bob public</span>
+          </p>
+          ${secretRow(senderHex, "Shared secret Alice derived, 32 bytes as hex")}
+        </div>
+        <div class="ecdh-card ecdh-bob">
+          <h3 class="ecdh-card-title ecdh-bob-title">Bob (recipient) computes</h3>
+          <p class="ecdh-formula">
+            <span class="ecdh-recip">Bob private</span>
+            <span aria-hidden="true">×</span><span class="sr-only">times</span>
+            <span class="ecdh-eph">ephemeral public</span>
+          </p>
+          ${secretRow(receiverHex, "Shared secret Bob derived, 32 bytes as hex")}
+        </div>
+      </div>
+      <div class="text-center my-3" aria-hidden="true">
+        <span class="ecdh-arrow">↓</span>
+      </div>
+      <div class="ecdh-result ${demo.secretsMatch ? "ecdh-result-ok" : "ecdh-result-bad"}">
+        <p class="ecdh-result-head">
+          ${demo.secretsMatch ? "✓ Both sides derived the SAME 32 bytes" : "✗ Secrets differ (unexpected!)"}
+        </p>
+        <p class="text-xs text-zinc-400 mt-1">
+          This shared secret feeds ${term("HKDF")} → a 256-bit AES key:
+        </p>
+        <div class="ecdh-aeskey" tabindex="0" role="region" aria-label="AES-256 key derived by HKDF from the shared secret">${toHex(demo.aesKey)}</div>
+      </div>
+      <p class="text-xs text-zinc-400 mt-3">
+        These are real WebCrypto ECDH derivations for this session's keys — recompute them by generating a new keypair.
+        The live seal/open path keeps the derived key unextractable; it is exported here only to visualize it.
+      </p>
+    </section>
+  `;
+}
+
 function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
   const s = state[algo];
   const m = s.metrics;
-  // A deep-linked recipient key takes precedence; otherwise default to your own
-  // generated key for convenient self-sends. recipientB64 persists in state so
-  // later re-renders (e.g. the boot self-test finishing) don't wipe it.
-  const recipientPublicKey = s.recipientB64 || s.publicKeyB64;
+  // TWO-PARTY DEFAULT: seal to BOB (someone else), not yourself. A deep-linked
+  // recipient key still takes precedence (share-URL flow). Falling back to Bob's
+  // key — never your own — forces the learner to grapple with "I encrypt to
+  // SOMEONE ELSE's public key", which is the entire meaning of asymmetry.
+  const recipientPublicKey = s.recipientB64 || s.bob.publicKeyB64;
   const algoLabel =
     algo === "ecies" ? "ECIES P-256" : algo === "rsa2048" ? "RSA-2048" : "RSA-4096";
 
   return `
     <div class="space-y-6">
+      <!-- Two-party primer -->
+      <section class="bg-zinc-900 rounded-xl p-5 border border-zinc-800">
+        <p class="text-sm text-zinc-300">
+          <span class="font-semibold text-sky-300">Alice</span> wants to send a private letter to
+          <span class="font-semibold text-emerald-300">Bob</span>. She seals it with
+          <span class="text-emerald-300">Bob's <em>public</em> key</span> — which anyone may know — and only
+          <span class="text-emerald-300">Bob's <em>private</em> key</span> can open it. Not even Alice can re-open it.
+          <span class="text-violet-300">Eve</span> the eavesdropper holds a different keypair, and you can watch her fail.
+        </p>
+        <p class="text-xs text-zinc-400 mt-2">
+          That directional asymmetry — encrypt with one key, decrypt only with its partner — is the whole idea.
+          Generate keys below to give each party a real ${algoLabel} keypair.
+        </p>
+      </section>
+
       <!-- Keygen Panel -->
       <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
         <h2 class="text-lg font-semibold text-zinc-200 mb-4"><span aria-hidden="true">🔑</span> Key Generation</h2>
         <button id="btn-keygen" class="min-h-[44px] px-4 py-2 rounded-lg bg-amber-500 text-zinc-950 font-medium text-sm hover:bg-amber-400 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
-          Generate ${algoLabel} Keypair
+          Generate ${algoLabel} keypairs for Alice, Bob & Eve
         </button>
         ${
           s.publicKeyB64
             ? `
           <div class="mt-4 space-y-3">
             <div>
-              <label class="text-xs text-zinc-400 block mb-1">Public Key (${m.publicKeySizeBytes} bytes) — ${m.keygenTimeMs.toFixed(1)}ms</label>
-              <div class="font-mono text-xs text-emerald-400 bg-zinc-950 p-3 rounded-lg break-all max-h-24 overflow-y-auto" role="region" aria-label="Public key value">${escapeHtml(s.publicKeyB64)}</div>
+              <label class="text-xs text-zinc-400 block mb-1"><span class="text-emerald-300 font-semibold">Bob's</span> Public Key (${m.publicKeySizeBytes} bytes, ${algo === "ecies" ? term("SPKI", "uncompressed point") : term("SPKI")}) — the seal target</label>
+              <div class="font-mono text-xs text-emerald-400 bg-zinc-950 p-3 rounded-lg break-all max-h-24 overflow-y-auto" tabindex="0" role="region" aria-label="Bob's public key value">${escapeHtml(s.bob.publicKeyB64)}</div>
             </div>
             <div>
-              <label class="text-xs text-zinc-400 block mb-1">Private Key (${m.privateKeySizeBytes} bytes)</label>
+              <label class="text-xs text-zinc-400 block mb-1"><span class="text-sky-300 font-semibold">Alice's</span> Public Key (${m.publicKeySizeBytes} bytes) — ${m.keygenTimeMs.toFixed(1)}ms keygen</label>
+              <div class="font-mono text-xs text-emerald-400 bg-zinc-950 p-3 rounded-lg break-all max-h-24 overflow-y-auto" tabindex="0" role="region" aria-label="Alice's public key value">${escapeHtml(s.publicKeyB64)}</div>
+            </div>
+            <div>
+              <label class="text-xs text-zinc-400 block mb-1"><span class="text-sky-300 font-semibold">Alice's</span> Private Key (${m.privateKeySizeBytes} bytes, ${term("PKCS8")})</label>
               <details>
                 <summary class="text-xs text-zinc-400 cursor-pointer hover:text-zinc-300">Reveal private key</summary>
-                <div class="font-mono text-xs text-red-400 bg-zinc-950 p-3 rounded-lg break-all mt-1 max-h-24 overflow-y-auto">${escapeHtml(s.privateKeyB64)}</div>
+                <div class="font-mono text-xs text-red-400 bg-zinc-950 p-3 rounded-lg break-all mt-1 max-h-24 overflow-y-auto" tabindex="0" role="region" aria-label="Alice's private key value">${escapeHtml(s.privateKeyB64)}</div>
               </details>
             </div>
             <!-- Share URL -->
@@ -242,10 +466,11 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
 
       <!-- Seal Panel -->
       <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
-        <h2 class="text-lg font-semibold text-zinc-200 mb-4"><span aria-hidden="true">📨</span> Seal (Encrypt)</h2>
+        <h2 class="text-lg font-semibold text-zinc-200 mb-1"><span aria-hidden="true">📨</span> Seal (Encrypt) — Alice → Bob</h2>
+        <p class="text-xs text-zinc-400 mb-4">Alice encrypts to <span class="text-emerald-300 font-semibold">Bob's public key</span> (pre-filled below). She could not decrypt the result herself.</p>
         <div class="space-y-3">
           <div>
-            <label for="seal-recipient-pk" class="text-xs text-zinc-400 block mb-1">Recipient Public Key (base64url)</label>
+            <label for="seal-recipient-pk" class="text-xs text-zinc-400 block mb-1">Recipient Public Key — <span class="text-emerald-300 font-semibold">Bob</span> (${term("base64url", "base64url")})</label>
             <input id="seal-recipient-pk" type="text" value="${escapeHtml(recipientPublicKey)}"
               class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400"
               placeholder="Paste recipient's public key..."
@@ -271,12 +496,14 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
               ? `
             <div class="mt-3">
               <div class="flex items-center justify-between mb-1">
-                <label class="text-xs text-zinc-400">Ciphertext (${m.ciphertextSizeBytes} bytes) — ${m.encryptTimeMs.toFixed(1)}ms</label>
+                <label class="text-xs text-zinc-400">Sealed envelope (${m.ciphertextSizeBytes} bytes) — ${m.encryptTimeMs.toFixed(1)}ms</label>
                 <button id="btn-copy-ct" aria-label="Copy ciphertext to clipboard" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
                   <span aria-hidden="true">📋</span> Copy
                 </button>
               </div>
-              <div class="font-mono text-xs text-sky-400 bg-zinc-950 p-3 rounded-lg break-all max-h-32 overflow-y-auto" role="region" aria-label="Encrypted ciphertext">${escapeHtml(s.ciphertext)}</div>
+              <p class="text-xs text-zinc-400 mb-1">What is actually inside a sealed letter — mapped onto the real bytes:</p>
+              ${renderCiphertextLayout(algo)}
+              <div class="mt-2 font-mono text-xs text-sky-400 bg-zinc-950 p-3 rounded-lg break-all max-h-32 overflow-y-auto" tabindex="0" role="region" aria-label="Encrypted ciphertext as base64url">${escapeHtml(s.ciphertext)}</div>
             </div>
           `
               : ""
@@ -284,13 +511,16 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
         </div>
       </section>
 
+      ${renderEcdhPanel(algo)}
+
       <!-- Open Panel -->
       <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
-        <h2 class="text-lg font-semibold text-zinc-200 mb-4"><span aria-hidden="true">📬</span> Open (Decrypt)</h2>
+        <h2 class="text-lg font-semibold text-zinc-200 mb-1"><span aria-hidden="true">📬</span> Open (Decrypt) — Bob's private key</h2>
+        <p class="text-xs text-zinc-400 mb-4">The field is pre-filled with <span class="text-emerald-300 font-semibold">Bob's</span> private key, the one the letter was sealed to. Open it, then try Eve's key to feel the boundary.</p>
         <div class="space-y-3">
           <div>
-            <label for="open-privkey" class="text-xs text-zinc-400 block mb-1">Private Key (base64url)</label>
-            <input id="open-privkey" type="text" value="${escapeHtml(s.privateKeyB64)}"
+            <label for="open-privkey" class="text-xs text-zinc-400 block mb-1">Private Key — <span class="text-emerald-300 font-semibold">Bob</span> (${term("PKCS8")}, ${term("base64url", "base64url")})</label>
+            <input id="open-privkey" type="text" value="${escapeHtml(s.bob.privateKeyB64)}"
               class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400"
               placeholder="Paste your private key..."
             />
@@ -302,9 +532,23 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
               placeholder="Paste ciphertext here..."
             >${escapeHtml(s.ciphertext)}</textarea>
           </div>
-          <button id="btn-open" class="min-h-[44px] px-4 py-2 rounded-lg bg-violet-600 text-white font-medium text-sm hover:bg-violet-500 transition-colors focus:outline-2 focus:outline-violet-400 focus:outline-offset-2">
-            Open Letter
-          </button>
+          <div class="flex flex-wrap gap-2">
+            <button id="btn-open" class="min-h-[44px] px-4 py-2 rounded-lg bg-violet-600 text-white font-medium text-sm hover:bg-violet-500 transition-colors focus:outline-2 focus:outline-violet-400 focus:outline-offset-2">
+              Open with Bob's key
+            </button>
+            ${
+              s.eve.privateKeyB64 && s.ciphertext
+                ? `<button id="btn-open-wrong" class="min-h-[44px] px-4 py-2 rounded-lg bg-zinc-800 text-red-300 font-medium text-sm border border-red-800 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-red-400 focus:outline-offset-2">
+                     Try opening with Eve's WRONG key
+                   </button>`
+                : ""
+            }
+          </div>
+          ${
+            s.eve.privateKeyB64 && s.ciphertext
+              ? `<p class="text-xs text-zinc-400">The wrong-key attempt runs a real ${term("AES-GCM")} decrypt. When the ${term("ECDH")} secret does not match, the authentication tag fails and decryption is rejected — no plaintext leaks.</p>`
+              : ""
+          }
           <div id="open-result" class="hidden mt-3" aria-live="polite">
             <label class="text-xs text-zinc-400 block mb-1">Decrypted Message</label>
             <div id="open-plaintext" class="text-sm text-zinc-100 bg-zinc-950 p-3 rounded-lg border border-emerald-800"></div>
@@ -357,8 +601,15 @@ function renderCompare(): string {
           </table>
         </div>
         <p class="text-xs text-zinc-400 mt-3">
-          Security level is the approximate symmetric-equivalent strength (NIST SP 800-57). Note the takeaway:
-          RSA-2048's far larger key is actually <em>weaker</em> than ECIES P-256's 65-byte key.
+          "Security level" is the approximate ${term("symmetric-equivalent bits", "symmetric-equivalent bits")} of strength
+          (NIST SP 800-57): how big an AES key would resist brute force equally hard. Higher is stronger; each extra bit
+          <em>doubles</em> the attacker's work.
+        </p>
+        <p class="text-xs text-zinc-300 mt-2 p-3 rounded-lg border border-amber-800 bg-zinc-950">
+          <strong class="text-amber-300">The counterintuitive takeaway:</strong> RSA-2048's far larger key (${fmtBytes(state.rsa2048.metrics.publicKeySizeBytes)})
+          is actually <em>weaker</em> (~112-bit) than ECIES P-256's 65-byte key (~128-bit). RSA's security grows only very
+          slowly with key size, so bigger RSA keys buy <em>less security per byte</em> than ECC — that is why modern systems
+          reach for elliptic curves.
         </p>
 
         <!-- Key size visual bar chart -->
@@ -413,6 +664,11 @@ function renderHowItWorksModal(): string {
         </div>
 
         <div class="space-y-6 text-sm text-zinc-300">
+          <div>
+            <h3 class="font-semibold text-amber-400 mb-2">The two-party model</h3>
+            <p>Asymmetric encryption is <em>directional</em>: Alice seals a letter to <span class="text-emerald-300">Bob's public key</span>, and only <span class="text-emerald-300">Bob's private key</span> can open it — not Alice's, and not Eve's. Use the seal panel to encrypt to Bob, open it with Bob's key, then hit "Try opening with Eve's WRONG key" to watch a real ${term("AES-GCM")} authentication failure. Both ECIES and RSA here are <strong>hybrid</strong>: the slow public-key math only protects a fast symmetric ${term("AES-GCM", "AES-GCM")} key, which does the bulk encryption.</p>
+          </div>
+
           <div>
             <h3 class="font-semibold text-amber-400 mb-2">ECIES P-256 Pipeline</h3>
             <div class="bg-zinc-950 rounded-lg p-4 font-mono text-xs text-zinc-400 space-y-1">
@@ -527,6 +783,11 @@ function bindEvents() {
     await withBusy(e.currentTarget as HTMLButtonElement, "Opening…", () => doOpen(algo));
   });
 
+  // Open with the WRONG (Eve's) private key — proves asymmetry by failing loudly.
+  document.getElementById("btn-open-wrong")?.addEventListener("click", async (e) => {
+    await withBusy(e.currentTarget as HTMLButtonElement, "Trying Eve's key…", () => doOpenWrong(algo));
+  });
+
   // Copy ciphertext
   document.getElementById("btn-copy-ct")?.addEventListener("click", async () => {
     await navigator.clipboard.writeText(state[algo].ciphertext);
@@ -574,26 +835,54 @@ function bindEvents() {
 async function doKeygen(algo: "ecies" | "rsa2048" | "rsa4096") {
   const s = state[algo];
   if (algo === "ecies") {
-    const { result: kp, timeMs } = await measure(() => ecies.generateKeypair());
-    const exported = await ecies.exportKeys(kp);
-    s.publicKey = kp.publicKey;
-    s.privateKey = kp.privateKey;
-    s.publicKeyB64 = exported.publicKeyB64;
-    s.privateKeyB64 = exported.privateKeyB64;
+    // Generate THREE independent keypairs so the two-party model is real:
+    //   Alice  = "You" (the historical publicKey/privateKey fields; sender)
+    //   Bob    = the recipient (his public key is the seal default)
+    //   Eve    = an eavesdropper (her private key is the "wrong key" demo)
+    const { result: aliceKp, timeMs } = await measure(() => ecies.generateKeypair());
+    const [bobKp, eveKp] = await Promise.all([
+      ecies.generateKeypair(),
+      ecies.generateKeypair(),
+    ]);
+    const [aliceEx, bobEx, eveEx] = await Promise.all([
+      ecies.exportKeys(aliceKp),
+      ecies.exportKeys(bobKp),
+      ecies.exportKeys(eveKp),
+    ]);
+    s.publicKey = aliceKp.publicKey;
+    s.privateKey = aliceKp.privateKey;
+    s.publicKeyB64 = aliceEx.publicKeyB64;
+    s.privateKeyB64 = aliceEx.privateKeyB64;
+    s.bob = { publicKey: bobKp.publicKey, privateKey: bobKp.privateKey, publicKeyB64: bobEx.publicKeyB64, privateKeyB64: bobEx.privateKeyB64 };
+    s.eve = { publicKey: eveKp.publicKey, privateKey: eveKp.privateKey, publicKeyB64: eveEx.publicKeyB64, privateKeyB64: eveEx.privateKeyB64 };
     s.metrics.keygenTimeMs = timeMs;
-    s.metrics.publicKeySizeBytes = exported.publicKeyRaw.byteLength;
-    s.metrics.privateKeySizeBytes = exported.privateKeyPkcs8.byteLength;
+    s.metrics.publicKeySizeBytes = aliceEx.publicKeyRaw.byteLength;
+    s.metrics.privateKeySizeBytes = aliceEx.privateKeyPkcs8.byteLength;
+    // Compute the REAL ECDH convergence between an ephemeral key and Bob's key,
+    // so the visualization shows Alice's and Bob's sides landing on identical bytes.
+    s.ecdhDemo = await ecies.deriveEcdhDemo(bobKp);
   } else {
     const bits = algo === "rsa2048" ? 2048 : 4096;
-    const { result: kp, timeMs } = await measure(() => rsa.generateKeypair(bits as rsa.RsaKeySize));
-    const exported = await rsa.exportKeys(kp);
-    s.publicKey = kp.publicKey;
-    s.privateKey = kp.privateKey;
-    s.publicKeyB64 = exported.publicKeyB64;
-    s.privateKeyB64 = exported.privateKeyB64;
+    const { result: aliceKp, timeMs } = await measure(() => rsa.generateKeypair(bits as rsa.RsaKeySize));
+    const [bobKp, eveKp] = await Promise.all([
+      rsa.generateKeypair(bits as rsa.RsaKeySize),
+      rsa.generateKeypair(bits as rsa.RsaKeySize),
+    ]);
+    const [aliceEx, bobEx, eveEx] = await Promise.all([
+      rsa.exportKeys(aliceKp),
+      rsa.exportKeys(bobKp),
+      rsa.exportKeys(eveKp),
+    ]);
+    s.publicKey = aliceKp.publicKey;
+    s.privateKey = aliceKp.privateKey;
+    s.publicKeyB64 = aliceEx.publicKeyB64;
+    s.privateKeyB64 = aliceEx.privateKeyB64;
+    s.bob = { publicKey: bobKp.publicKey, privateKey: bobKp.privateKey, publicKeyB64: bobEx.publicKeyB64, privateKeyB64: bobEx.privateKeyB64 };
+    s.eve = { publicKey: eveKp.publicKey, privateKey: eveKp.privateKey, publicKeyB64: eveEx.publicKeyB64, privateKeyB64: eveEx.privateKeyB64 };
     s.metrics.keygenTimeMs = timeMs;
-    s.metrics.publicKeySizeBytes = exported.publicKeySpki.byteLength;
-    s.metrics.privateKeySizeBytes = exported.privateKeyPkcs8.byteLength;
+    s.metrics.publicKeySizeBytes = aliceEx.publicKeySpki.byteLength;
+    s.metrics.privateKeySizeBytes = aliceEx.privateKeyPkcs8.byteLength;
+    s.ecdhDemo = null;
   }
 }
 
@@ -666,6 +955,43 @@ async function doOpen(algo: "ecies" | "rsa2048" | "rsa4096") {
   }
 }
 
+// The security-boundary demo: attempt to open Alice's letter to Bob using
+// EVE's private key. This is a REAL decrypt attempt against the real envelope.
+// For ECIES, Eve's ECDH secret differs from Bob's, so the derived AES key is
+// wrong and the GCM tag check fails. For RSA, OAEP unwrap of the key with the
+// wrong modulus fails. Either way, no plaintext is produced — that failure is
+// exactly what asymmetry guarantees.
+async function doOpenWrong(algo: "ecies" | "rsa2048" | "rsa4096") {
+  const s = state[algo];
+  const ctText = (document.getElementById("open-ciphertext") as HTMLTextAreaElement).value.trim() || s.ciphertext;
+  if (!s.eve.privateKeyB64 || !ctText) return;
+
+  try {
+    if (algo === "ecies") {
+      const eve = await ecies.importPrivateKey(s.eve.privateKeyB64);
+      const envelope = ecies.deserializeEnvelope(ctText);
+      await ecies.open(eve, envelope);
+    } else {
+      const keySize = algo === "rsa2048" ? 2048 : 4096;
+      const eve = await rsa.importPrivateKey(s.eve.privateKeyB64);
+      const envelope = rsa.deserializeEnvelope(ctText, keySize as rsa.RsaKeySize);
+      await rsa.open(eve, envelope);
+    }
+    // Reaching here would mean the wrong key decrypted — cryptographically it
+    // should be impossible. Report it honestly rather than hide it.
+    const msg = "Unexpected: Eve's key opened the letter. This should never happen — please report it.";
+    announce(msg);
+    showResultMessage(msg, true, "Eve's attempt");
+  } catch {
+    const msg =
+      algo === "ecies"
+        ? "Rejected. Eve's ECDH secret ≠ Bob's, so the AES-GCM authentication tag failed. The wrong private key cannot open the letter — this is asymmetry in action."
+        : "Rejected. RSA-OAEP unwrap with Eve's key failed, so no AES key was recovered. The wrong private key cannot open the letter — this is asymmetry in action.";
+    announce("Decryption with the wrong key failed, as expected.");
+    showResultMessage(msg, true, "Eve's attempt — failed as expected ✓");
+  }
+}
+
 // ── Benchmark (Compare tab) ──────────────────────────────────────────
 
 async function runBenchmark() {
@@ -690,8 +1016,31 @@ async function runBenchmark() {
 
 async function benchmarkAlgo(algo: "ecies" | "rsa2048" | "rsa4096") {
   // Keygen is the expensive, high-variance op — a single sample is honest.
-  await doKeygen(algo);
+  // The benchmark measures ONE keypair (not the seal/open workbench's Alice+Bob+Eve
+  // trio) so the reported keygen time reflects a single generateKey call.
   const s = state[algo];
+  if (algo === "ecies") {
+    const { result: kp, timeMs } = await measure(() => ecies.generateKeypair());
+    const exported = await ecies.exportKeys(kp);
+    s.publicKey = kp.publicKey;
+    s.privateKey = kp.privateKey;
+    s.publicKeyB64 = exported.publicKeyB64;
+    s.privateKeyB64 = exported.privateKeyB64;
+    s.metrics.keygenTimeMs = timeMs;
+    s.metrics.publicKeySizeBytes = exported.publicKeyRaw.byteLength;
+    s.metrics.privateKeySizeBytes = exported.privateKeyPkcs8.byteLength;
+  } else {
+    const bits = algo === "rsa2048" ? 2048 : 4096;
+    const { result: kp, timeMs } = await measure(() => rsa.generateKeypair(bits as rsa.RsaKeySize));
+    const exported = await rsa.exportKeys(kp);
+    s.publicKey = kp.publicKey;
+    s.privateKey = kp.privateKey;
+    s.publicKeyB64 = exported.publicKeyB64;
+    s.privateKeyB64 = exported.privateKeyB64;
+    s.metrics.keygenTimeMs = timeMs;
+    s.metrics.publicKeySizeBytes = exported.publicKeySpki.byteLength;
+    s.metrics.privateKeySizeBytes = exported.privateKeyPkcs8.byteLength;
+  }
   if (!s.publicKey || !s.privateKey) return;
 
   if (algo === "ecies") {

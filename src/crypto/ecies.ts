@@ -170,6 +170,68 @@ async function aesDecrypt(
   return new Uint8Array(pt);
 }
 
+// ── Teaching visualization: ECDH convergence ────────────────────────
+// Honestly demonstrates the "aha" of asymmetry: the sender computes the
+// shared secret from (ephemeral private × recipient public) and the receiver
+// computes it from (recipient private × ephemeral public). Both land on the
+// SAME 32 bytes — that is why only the matching private key can decrypt.
+// Everything here is a REAL WebCrypto ECDH/HKDF computation; nothing is faked.
+
+export interface EcdhDemo {
+  ephemeralPub: Uint8Array; // 65 bytes, the ephemeral public key that ships
+  recipientPub: Uint8Array; // 65 bytes, the recipient's public key
+  senderSecret: Uint8Array; // 32 bytes: ephPriv × recipientPub
+  receiverSecret: Uint8Array; // 32 bytes: recipientPriv × ephPub
+  aesKey: Uint8Array; // 32 bytes: HKDF(sharedSecret) → AES-256 key
+  secretsMatch: boolean; // must be true; proves both sides converge
+}
+
+// Derive the AES key exactly as seal()/open() do, but export its raw bytes so
+// the visualization can show the real derived key. Uses an extractable HKDF
+// output ONLY for this demo path; the live seal/open path keeps it unextractable.
+async function hkdfExpandExtractable(sharedBits: ArrayBuffer): Promise<Uint8Array> {
+  const hkdfKey = await crypto.subtle.importKey("raw", sharedBits, "HKDF", false, ["deriveKey"]);
+  const aes = await crypto.subtle.deriveKey(
+    { name: "HKDF", hash: "SHA-256", salt: new Uint8Array(32), info: HKDF_INFO },
+    hkdfKey,
+    { name: "AES-GCM", length: AES_KEY_BITS },
+    true,
+    ["encrypt", "decrypt"]
+  );
+  return new Uint8Array(await crypto.subtle.exportKey("raw", aes));
+}
+
+export async function deriveEcdhDemo(recipient: EciesKeypair): Promise<EcdhDemo> {
+  const eph = await generateKeypair();
+  const [ephPubRaw, recipientPubRaw] = await Promise.all([
+    crypto.subtle.exportKey("raw", eph.publicKey),
+    crypto.subtle.exportKey("raw", recipient.publicKey),
+  ]);
+
+  // Sender side: ephemeral private × recipient public.
+  const senderBits = await deriveSharedBits(eph.privateKey, recipient.publicKey);
+  // Receiver side: recipient private × ephemeral public.
+  const receiverBits = await deriveSharedBits(recipient.privateKey, eph.publicKey);
+
+  const senderSecret = new Uint8Array(senderBits);
+  const receiverSecret = new Uint8Array(receiverBits);
+  const aesKey = await hkdfExpandExtractable(senderBits);
+
+  let secretsMatch = senderSecret.length === receiverSecret.length;
+  for (let i = 0; secretsMatch && i < senderSecret.length; i++) {
+    if (senderSecret[i] !== receiverSecret[i]) secretsMatch = false;
+  }
+
+  return {
+    ephemeralPub: new Uint8Array(ephPubRaw),
+    recipientPub: new Uint8Array(recipientPubRaw),
+    senderSecret,
+    receiverSecret,
+    aesKey,
+    secretsMatch,
+  };
+}
+
 // ── 1.8  ECIES seal ─────────────────────────────────────────────────
 
 export async function seal(

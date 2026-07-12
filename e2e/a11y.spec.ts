@@ -63,7 +63,25 @@ async function scan(page: Page): Promise<void> {
   expect(summary).toEqual([]);
 }
 
+// Drive the ECIES workbench through a full seal so the teaching panels that
+// only exist after a keypair/ciphertext — the ECDH convergence panel, the
+// color-coded byte-layout strip, and the "wrong key" (Eve) button — are present
+// and get scanned for contrast/labels in both themes.
+async function prepareEcies(page: Page): Promise<void> {
+  await page.locator("#tab-ecies").click();
+  await expect(page.locator("#tab-ecies")).toHaveAttribute("aria-selected", "true");
+  await page.locator("#btn-keygen").click();
+  // Bob's public key populates the seal field once the three keypairs exist.
+  await expect(page.locator("#seal-recipient-pk")).not.toHaveValue("");
+  await page.locator("#seal-message").fill("Meet at the docks at midnight.");
+  await page.locator("#btn-seal").click();
+  // The sealed-envelope byte strip and ECDH panel appear after a successful seal.
+  await expect(page.locator(".byte-strip")).toBeVisible();
+  await expect(page.locator("#btn-open-wrong")).toBeVisible();
+}
+
 async function runSuite(page: Page): Promise<void> {
+  await prepareEcies(page);
   await neutralizeMotion(page);
   for (const tab of TABS) {
     await page.locator(`#tab-${tab}`).click();

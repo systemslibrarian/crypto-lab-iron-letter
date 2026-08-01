@@ -153,8 +153,10 @@ function render() {
         ${renderTab("compare", "Compare")}
       </nav>
 
-      <main id="main-content" role="tabpanel" aria-labelledby="tab-${currentTab}">
-        ${currentTab === "compare" ? renderCompare() : renderAlgoPanel(currentTab)}
+      <main id="main-content">
+        <div id="tabpanel" role="tabpanel" aria-labelledby="tab-${currentTab}">
+          ${currentTab === "compare" ? renderCompare() : renderAlgoPanel(currentTab)}
+        </div>
       </main>
 
       <div aria-live="polite" aria-atomic="true" id="status-announcer" class="sr-only"></div>
@@ -213,7 +215,7 @@ function renderTab(id: Tab, label: string): string {
     data-tab="${id}"
     role="tab"
     aria-selected="${active}"
-    aria-controls="main-content"
+    aria-controls="tabpanel"
     tabindex="${active ? "0" : "-1"}"
     class="min-h-[44px] px-4 py-2 text-sm font-medium transition-colors ${
       active
@@ -436,17 +438,17 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
             ? `
           <div class="mt-4 space-y-3">
             <div>
-              <label class="text-xs text-zinc-400 block mb-1"><span class="text-emerald-300 font-semibold">Bob's</span> Public Key (${m.publicKeySizeBytes} bytes, ${algo === "ecies" ? term("SPKI", "uncompressed point") : term("SPKI")}) — the seal target</label>
+              <div class="text-xs text-zinc-400 block mb-1"><span class="text-emerald-300 font-semibold">Bob's</span> Public Key (${m.publicKeySizeBytes} bytes, ${algo === "ecies" ? term("SPKI", "uncompressed point") : term("SPKI")}) — the seal target</div>
               <div class="font-mono text-xs text-emerald-400 bg-zinc-950 p-3 rounded-lg break-all max-h-24 overflow-y-auto" tabindex="0" role="region" aria-label="Bob's public key value">${escapeHtml(s.bob.publicKeyB64)}</div>
             </div>
             <div>
-              <label class="text-xs text-zinc-400 block mb-1"><span class="text-sky-300 font-semibold">Alice's</span> Public Key (${m.publicKeySizeBytes} bytes) — ${m.keygenTimeMs.toFixed(1)}ms keygen</label>
+              <div class="text-xs text-zinc-400 block mb-1"><span class="text-sky-300 font-semibold">Alice's</span> Public Key (${m.publicKeySizeBytes} bytes) — ${m.keygenTimeMs.toFixed(1)}ms keygen</div>
               <div class="font-mono text-xs text-emerald-400 bg-zinc-950 p-3 rounded-lg break-all max-h-24 overflow-y-auto" tabindex="0" role="region" aria-label="Alice's public key value">${escapeHtml(s.publicKeyB64)}</div>
             </div>
             <div>
-              <label class="text-xs text-zinc-400 block mb-1"><span class="text-sky-300 font-semibold">Alice's</span> Private Key (${m.privateKeySizeBytes} bytes, ${term("PKCS8")})</label>
+              <div class="text-xs text-zinc-400 block mb-1"><span class="text-sky-300 font-semibold">Alice's</span> Private Key (${m.privateKeySizeBytes} bytes, ${term("PKCS8")})</div>
               <details>
-                <summary class="text-xs text-zinc-400 cursor-pointer hover:text-zinc-300">Reveal private key</summary>
+                <summary class="min-h-[44px] flex items-center text-xs text-zinc-400 cursor-pointer hover:text-zinc-300">Reveal private key</summary>
                 <div class="font-mono text-xs text-red-400 bg-zinc-950 p-3 rounded-lg break-all mt-1 max-h-24 overflow-y-auto" tabindex="0" role="region" aria-label="Alice's private key value">${escapeHtml(s.privateKeyB64)}</div>
               </details>
             </div>
@@ -498,7 +500,7 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
               ? `
             <div class="mt-3">
               <div class="flex items-center justify-between mb-1">
-                <label class="text-xs text-zinc-400">Sealed envelope (${m.ciphertextSizeBytes} bytes) — ${m.encryptTimeMs.toFixed(1)}ms</label>
+                <div class="text-xs text-zinc-400">Sealed envelope (${m.ciphertextSizeBytes} bytes) — ${m.encryptTimeMs.toFixed(1)}ms</div>
                 <button id="btn-copy-ct" aria-label="Copy ciphertext to clipboard" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
                   <span aria-hidden="true">📋</span> Copy
                 </button>
@@ -552,7 +554,7 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
               : ""
           }
           <div id="open-result" class="hidden mt-3" aria-live="polite">
-            <label class="text-xs text-zinc-400 block mb-1">Decrypted Message</label>
+            <div class="result-label text-xs text-zinc-400 block mb-1">Decrypted Message</div>
             <div id="open-plaintext" class="text-sm text-zinc-100 bg-zinc-950 p-3 rounded-lg border border-emerald-800"></div>
           </div>
         </div>
@@ -662,7 +664,7 @@ function renderHowItWorksModal(): string {
       <div class="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-8">
         <div class="flex justify-between items-start mb-6">
           <h2 id="modal-title" class="text-xl font-bold text-zinc-100">How It Works</h2>
-          <button id="btn-close-modal" class="text-zinc-400 hover:text-zinc-300 text-xl" aria-label="Close">✕</button>
+          <button id="btn-close-modal" class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-zinc-400 hover:text-zinc-300 text-xl" aria-label="Close">✕</button>
         </div>
 
         <div class="space-y-6 text-sm text-zinc-300">
@@ -728,6 +730,8 @@ function bindEvents() {
   // How it works modal
   document.getElementById("btn-how")?.addEventListener("click", () => {
     document.getElementById("modal-how")?.classList.remove("hidden");
+    // Move focus into the dialog so keyboard/SR users land inside it (WCAG 2.4.3).
+    (document.getElementById("btn-close-modal") as HTMLButtonElement | null)?.focus();
   });
   document.getElementById("btn-close-modal")?.addEventListener("click", closeModal);
   document.getElementById("modal-how")?.addEventListener("click", (e) => {
@@ -1111,7 +1115,7 @@ function bindGlobalListeners() {
 function showResultMessage(message: string, isError: boolean, label = "Decrypted Message") {
   const resultDiv = document.getElementById("open-result");
   const ptDiv = document.getElementById("open-plaintext");
-  const labelEl = resultDiv?.querySelector("label");
+  const labelEl = resultDiv?.querySelector(".result-label");
 
   if (!resultDiv || !ptDiv || !labelEl) return;
 

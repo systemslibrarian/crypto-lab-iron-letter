@@ -25,7 +25,10 @@ export function generateQrSvg(text: string, size = 256): string {
     }
   }
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">
+  // The QR conveys meaning (it encodes the share URL), so it needs a text
+  // alternative: role="img" plus a <title> referenced by aria-labelledby.
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-labelledby="qr-svg-title" style="max-width:100%;height:auto">
+    <title id="qr-svg-title">QR code encoding the share URL for this public key</title>
     <rect width="100%" height="100%" fill="white"/>
     <path d="${paths}" fill="black"/>
   </svg>`;

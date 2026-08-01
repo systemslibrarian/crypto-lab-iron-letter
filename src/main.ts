@@ -88,8 +88,17 @@ const BENCH_ITERATIONS = 25;
 const BENCH_MESSAGE = new TextEncoder().encode(
   "Iron Letter benchmark — the quick brown fox jumps over the lazy dog."
 );
-// Approximate symmetric-equivalent security per NIST SP 800-57. The teaching
-// point: RSA-2048's much larger key is actually *weaker* than P-256.
+// Approximate symmetric-equivalent security strengths.
+//
+// ecies (P-256) -> 128 and rsa2048 -> 112 are taken directly from NIST SP
+// 800-57 Pt.1 Rev.5, Table 2, which lists RSA moduli of 2048 -> 112,
+// 3072 -> 128, 7680 -> 192 and 15360 -> 256.
+//
+// rsa4096 -> ~140 is NOT an SP 800-57 number: Table 2 has no 4096-bit row at
+// all. It is an interpolation between the 3072 and 7680 rows in the style of
+// ECRYPT-CSA / Lenstra-Verheul, and is shown as an approximation only.
+//
+// The teaching point: RSA-2048's much larger key is actually *weaker* than P-256.
 const SECURITY_BITS: Record<"ecies" | "rsa2048" | "rsa4096", number> = {
   ecies: 128,
   rsa2048: 112,
@@ -605,9 +614,12 @@ function renderCompare(): string {
           </table>
         </div>
         <p class="text-xs text-zinc-400 mt-3">
-          "Security level" is the approximate ${term("symmetric-equivalent bits", "symmetric-equivalent bits")} of strength
-          (NIST SP 800-57): how big an AES key would resist brute force equally hard. Higher is stronger; each extra bit
-          <em>doubles</em> the attacker's work.
+          "Security level" is the approximate ${term("symmetric-equivalent bits", "symmetric-equivalent bits")} of strength:
+          how big an AES key would resist brute force equally hard. Higher is stronger; each extra bit
+          <em>doubles</em> the attacker's work. The P-256 (~128-bit) and RSA-2048 (~112-bit) figures come from
+          NIST SP 800-57 Pt.1 Rev.5, Table 2, which lists RSA moduli of 2048, 3072, 7680 and 15360 only. That table has
+          no 4096-bit row, so RSA-4096's ~140-bit figure is an interpolation (ECRYPT-CSA / Lenstra-Verheul style),
+          not an SP 800-57 value.
         </p>
         <p class="text-xs text-zinc-300 mt-2 p-3 rounded-lg border border-amber-800 bg-zinc-950">
           <strong class="text-amber-300">The counterintuitive takeaway:</strong> RSA-2048's far larger key (${fmtBytes(state.rsa2048.metrics.publicKeySizeBytes)})

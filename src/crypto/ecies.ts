@@ -238,6 +238,22 @@ export async function seal(
   recipientPubKey: CryptoKey,
   plaintext: BufferSource
 ): Promise<EciesCiphertext> {
+  return (await sealTraced(recipientPubKey, plaintext)).envelope;
+}
+
+// Identical to seal(), but also hands back the raw ECDH secret the SENDER
+// computed. The MITM exhibit needs that number to put Alice's secret next to
+// Bob's, and deriveBits already returns those bytes in the clear — nothing here
+// weakens the sealing path, which is why seal() is now a thin wrapper.
+export interface SealTrace {
+  envelope: EciesCiphertext;
+  sharedSecret: Uint8Array; // 32 bytes: ephemeral private × recipient public
+}
+
+export async function sealTraced(
+  recipientPubKey: CryptoKey,
+  plaintext: BufferSource
+): Promise<SealTrace> {
   // ephemeral keypair
   const eph = await generateKeypair();
   const ephPubRaw = await crypto.subtle.exportKey("raw", eph.publicKey);
@@ -250,10 +266,31 @@ export async function seal(
   const { iv, ciphertext } = await aesEncrypt(aesKey, plaintext);
 
   return {
-    ephemeralPub: new Uint8Array(ephPubRaw),
-    iv,
-    ciphertext,
+    envelope: {
+      ephemeralPub: new Uint8Array(ephPubRaw),
+      iv,
+      ciphertext,
+    },
+    sharedSecret: new Uint8Array(shared),
   };
+}
+
+// The ECDH secret a holder of `privateKey` computes against a raw (65-byte)
+// public point taken off the wire. Real deriveBits; used to show what Bob would
+// have computed from the ephemeral key in Alice's envelope.
+export async function deriveSecretForRawPub(
+  privateKey: CryptoKey,
+  rawPub: Uint8Array
+): Promise<Uint8Array> {
+  validateRawPublicKey(rawPub, "Public key");
+  const pub = await crypto.subtle.importKey(
+    "raw",
+    rawPub as Uint8Array<ArrayBuffer>,
+    { name: "ECDH", namedCurve: CURVE },
+    false,
+    []
+  );
+  return new Uint8Array(await deriveSharedBits(privateKey, pub));
 }
 
 // ── 1.9  ECIES open ─────────────────────────────────────────────────
@@ -309,6 +346,17 @@ export async function importPublicKey(b64: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
     raw,
+    { name: "ECDH", namedCurve: CURVE },
+    true,
+    []
+  );
+}
+
+export async function importRawPublicKey(raw: Uint8Array): Promise<CryptoKey> {
+  validateRawPublicKey(raw, "Public key");
+  return crypto.subtle.importKey(
+    "raw",
+    raw as Uint8Array<ArrayBuffer>,
     { name: "ECDH", namedCurve: CURVE },
     true,
     []

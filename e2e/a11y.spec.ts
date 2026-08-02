@@ -78,6 +78,11 @@ async function prepareEcies(page: Page): Promise<void> {
   // The sealed-envelope byte strip and ECDH panel appear after a successful seal.
   await expect(page.locator(".byte-strip")).toBeVisible();
   await expect(page.locator("#btn-open-wrong")).toBeVisible();
+  // Mount the MITM attack so its result markup (mismatched secret cards, the
+  // key/verification tables, the recovered plaintexts) is present to be scanned.
+  await page.locator("#mitm-tamper").check();
+  await page.locator("#btn-mitm-unauth").click();
+  await expect(page.locator("#mitm-verdict")).toContainText("Secrets DIFFER");
 }
 
 async function runSuite(page: Page): Promise<void> {
@@ -93,6 +98,15 @@ async function runSuite(page: Page): Promise<void> {
     await revealInline(page);
     await scan(page);
   }
+
+  // The defeated-attack result is a different render path (abort branch), so
+  // scan it too rather than assume it inherits the attack view's compliance.
+  await page.locator("#tab-ecies").click();
+  await page.locator("#btn-mitm-auth").click();
+  await expect(page.locator("#mitm-verdict")).toContainText("Attack defeated");
+  await neutralizeMotion(page);
+  await revealInline(page);
+  await scan(page);
 
   // "How It Works" modal — its backdrop covers the page.
   await page.locator("#btn-how").click();

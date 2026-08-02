@@ -4,6 +4,7 @@ import "./style.css";
 import * as ecies from "./crypto/ecies";
 import * as rsa from "./crypto/rsa";
 import type { EcdhDemo } from "./crypto/ecies";
+import { runMitm, type MitmRun } from "./crypto/mitm";
 import { measure, measureAverage, emptyMetrics, type Metrics } from "./crypto/metrics";
 import { runStartupSelfTest } from "./crypto/selftest";
 import { buildShareUrl, parseCurrentUrl } from "./keyurl";
@@ -81,6 +82,15 @@ const state: Record<"ecies" | "rsa2048" | "rsa4096", AlgoState> = {
   ecies: emptyAlgoState(),
   rsa2048: emptyAlgoState(),
   rsa4096: emptyAlgoState(),
+};
+
+// The man-in-the-middle exhibit keeps its own state: it generates fresh keys per
+// run (Bob, Eve, and their long-term identity keys), so it does not depend on
+// the workbench's keygen step.
+const mitm: { message: string; tamper: boolean; run: MitmRun | null } = {
+  message: "Meet me at the north gate at eight. — Alice",
+  tamper: false,
+  run: null,
 };
 
 // Number of iterations the Compare benchmark averages encrypt/decrypt over.
@@ -261,6 +271,10 @@ const GLOSSARY: Record<string, string> = {
     "How many bits of a symmetric key (like AES) would give the same brute-force resistance. 128-bit ≈ 3.4×10^38 operations. It lets you compare RSA and ECC key strength on one scale.",
   base64url:
     "URL-safe Base64 text encoding of raw bytes (uses - and _ instead of + and /, no padding). Just a way to print binary keys/ciphertext as ASCII.",
+  ECDSA:
+    "Elliptic Curve Digital Signature Algorithm: signs with a private key so anyone holding the matching public key can verify who produced the bytes. Signing a public key is how you learn WHOSE key it is.",
+  PKI:
+    "Public Key Infrastructure: the system of certificate authorities and certificates that binds a public key to an identity, so you can check a key belongs to who it claims.",
 };
 
 function glossaryId(term: string): string {
@@ -405,6 +419,173 @@ function renderEcdhPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
         The live seal/open path keeps the derived key unextractable; it is exported here only to visualize it.
       </p>
     </section>
+  `;
+}
+
+// ── The active man-in-the-middle exhibit ─────────────────────────────
+// Everything rendered here comes from `runMitm()`: real ECDH derivations, real
+// AES-GCM opens, real ECDSA verifications on freshly generated P-256 keys.
+// Nothing is a drawing of an attack; it is the attack's output.
+
+function renderMitmPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
+  if (algo !== "ecies") return "";
+  const run = mitm.run;
+
+  const controls = `
+    <div class="space-y-3">
+      <div>
+        <label for="mitm-message" class="text-xs text-zinc-400 block mb-1">Alice's letter (she believes she is sealing it to Bob)</label>
+        <textarea id="mitm-message" rows="2"
+          class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400 resize-y"
+        >${escapeHtml(mitm.message)}</textarea>
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="mitm-tamper" type="checkbox" ${mitm.tamper ? "checked" : ""}
+          class="w-4 h-4 accent-amber-500 focus:outline-2 focus:outline-amber-400 focus:outline-offset-2" />
+        <label for="mitm-tamper" class="text-xs text-zinc-300">Eve rewrites the letter before relaying it (active, not just eavesdropping)</label>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button id="btn-mitm-unauth" class="min-h-[44px] px-4 py-2 rounded-lg bg-red-800 text-white font-medium text-sm hover:bg-red-700 transition-colors focus:outline-2 focus:outline-red-400 focus:outline-offset-2">
+          Mount the attack — unauthenticated
+        </button>
+        <button id="btn-mitm-auth" class="min-h-[44px] px-4 py-2 rounded-lg bg-emerald-700 text-white font-medium text-sm hover:bg-emerald-600 transition-colors focus:outline-2 focus:outline-emerald-400 focus:outline-offset-2">
+          Same attack — Alice verifies the signed key
+        </button>
+      </div>
+    </div>
+  `;
+
+  return `
+    <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
+      <h2 class="text-lg font-semibold text-zinc-200 mb-1"><span aria-hidden="true">🕵</span> Mount the attack: Eve on the wire</h2>
+      <p class="text-xs text-zinc-400 mb-3">
+        The wrong-key button above shows Eve failing <em>passively</em>. But encryption alone never tells Alice
+        <em>whose</em> public key she just received. Let Eve hand Alice her own key instead of Bob's and run it:
+        Alice's letter is sealed to Eve, Eve opens it for real, re-seals to Bob, and both ends see an ordinary exchange.
+        Then run the same attack against a channel where Bob's key arrives <em>signed</em> by his long-term
+        ${term("ECDSA", "ECDSA")} identity key.
+      </p>
+      ${controls}
+      <div id="mitm-result" aria-live="polite" class="mt-4">
+        ${run ? renderMitmRun(run) : `<p class="text-xs text-zinc-400">Run either variant to populate this panel with that run's real bytes.</p>`}
+      </div>
+      <p class="text-xs text-zinc-400 mt-3">
+        Each run generates fresh P-256 keypairs for Bob and Eve plus long-term ECDSA identity keys, then performs the real
+        derivations, seals, opens and signature verifications shown above. Alice is assumed to already know Bob's
+        <em>identity</em> public key out of band — that assumption is the trust anchor the whole authenticated path rests on,
+        and it is exactly what a real ${term("PKI", "PKI")} or a fingerprint comparison provides.
+      </p>
+    </section>
+  `;
+}
+
+function keyChip(bytes: Uint8Array): string {
+  // First 8 bytes are enough to see at a glance that two keys differ.
+  return `${toHex(bytes.slice(0, 8))}…`;
+}
+
+function renderMitmRun(run: MitmRun): string {
+  const wire = `
+    <div class="mitm-step">
+      <h3 class="mitm-step-title">1 · What arrived on the wire</h3>
+      <dl class="mitm-kv">
+        <dt>Bob's genuine ECDH key</dt><dd class="mitm-mono">${keyChip(run.bobPub)}</dd>
+        <dt>Key Alice received</dt><dd class="mitm-mono ${run.keySubstituted ? "mitm-bad" : "mitm-ok"}">${keyChip(run.offeredPub)}${run.keySubstituted ? " — SUBSTITUTED by Eve" : " — unmodified"}</dd>
+      </dl>
+    </div>
+  `;
+
+  const sig = `
+    <div class="mitm-step">
+      <h3 class="mitm-step-title">2 · The authentication step</h3>
+      <dl class="mitm-kv">
+        <dt>Did Alice check the signature?</dt>
+        <dd class="${run.signatureChecked ? "mitm-ok" : "mitm-bad"}">${run.signatureChecked ? "Yes — signed-key channel" : "No — the key was accepted on sight"}</dd>
+        <dt>ECDSA verify of the offered key against Bob's identity key</dt>
+        <dd class="${run.signatureWouldVerify ? "mitm-ok" : "mitm-bad"}">${run.signatureWouldVerify ? "VALID" : "INVALID"}${run.signatureChecked ? "" : " — computed here, but Alice never ran it"}</dd>
+        <dt>Control: same check over Bob's genuine signed key</dt>
+        <dd class="${run.genuineKeyVerifies ? "mitm-ok" : "mitm-bad"}">${run.genuineKeyVerifies ? "VALID" : "INVALID"}</dd>
+      </dl>
+    </div>
+  `;
+
+  if (run.aborted) {
+    return `
+      ${wire}
+      ${sig}
+      <div class="ecdh-result ecdh-result-ok mt-3">
+        <p class="ecdh-result-head" id="mitm-verdict">✓ Attack defeated — Alice aborted before sealing</p>
+        <p class="text-xs text-zinc-400 mt-1">${escapeHtml(run.abortReason ?? "")}</p>
+        <p class="text-xs text-zinc-400 mt-2">
+          Eve recovered: <span class="mitm-mono mitm-ok">nothing</span>. Bob received: <span class="mitm-mono mitm-ok">nothing</span>.
+          The control line above proves the check is not simply rejecting everything: over Bob's genuine key it returns VALID.
+        </p>
+      </div>
+    `;
+  }
+
+  const secretRow = (bytes: Uint8Array, label: string, ok: boolean, id: string) =>
+    `<div id="${id}" class="ecdh-secret ${ok ? "" : "mitm-secret-bad"}" tabindex="0" role="region" aria-label="${label}">${toHex(bytes)}</div>`;
+
+  const match = run.secretsMatch === true;
+
+  return `
+    ${wire}
+    ${sig}
+    <div class="mitm-step">
+      <h3 class="mitm-step-title">3 · The secret each side thinks it shares with the other</h3>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="ecdh-card ecdh-alice">
+          <h4 class="ecdh-card-title ecdh-alice-title">Alice derived</h4>
+          <p class="ecdh-formula"><span class="ecdh-eph">ephemeral private</span> <span aria-hidden="true">×</span><span class="sr-only">times</span> <span class="ecdh-recip">the key she was handed</span></p>
+          ${run.aliceSecret ? secretRow(run.aliceSecret, "Shared secret Alice derived, 32 bytes as hex", match, "mitm-alice-secret") : ""}
+        </div>
+        <div class="ecdh-card ecdh-bob">
+          <h4 class="ecdh-card-title ecdh-bob-title">Bob would derive</h4>
+          <p class="ecdh-formula"><span class="ecdh-recip">Bob private</span> <span aria-hidden="true">×</span><span class="sr-only">times</span> <span class="ecdh-eph">ephemeral public from Alice's envelope</span></p>
+          ${run.bobSecret ? secretRow(run.bobSecret, "Shared secret Bob would derive, 32 bytes as hex", match, "mitm-bob-secret") : ""}
+        </div>
+      </div>
+      <div class="ecdh-result ${match ? "ecdh-result-ok" : "ecdh-result-bad"} mt-3">
+        <p class="ecdh-result-head" id="mitm-verdict">${
+          match
+            ? "✓ Secrets match — Alice and Bob really are talking to each other"
+            : "✗ Secrets DIFFER — Alice is sharing a secret with Eve, not Bob"
+        }</p>
+        <p class="text-xs text-zinc-400 mt-1">
+          Byte-compared from this run. Neither Alice nor Bob can see this comparison: Alice never learns Bob's number, and Bob
+          never sees the envelope Alice actually produced.
+        </p>
+      </div>
+    </div>
+    <div class="mitm-step">
+      <h3 class="mitm-step-title">4 · What each party ended up with</h3>
+      <dl class="mitm-kv">
+        <dt>Alice sent</dt><dd class="mitm-quote">${escapeHtml(run.originalMessage)}</dd>
+        <dt>Bob could open Alice's own envelope?</dt>
+        <dd class="${run.bobCanOpenAliceEnvelope ? "mitm-ok" : "mitm-bad"}">${run.bobCanOpenAliceEnvelope ? "Yes" : "No — real AES-GCM tag failure; the letter was not addressed to him"}</dd>
+        <dt>Eve decrypted</dt>
+        <dd class="${run.eveRecovered === null ? "mitm-ok" : "mitm-bad"} mitm-quote" id="mitm-eve-read">${
+          run.eveRecovered === null
+            ? "nothing — her key could not open it"
+            : escapeHtml(run.eveRecovered)
+        }</dd>
+        <dt>Bob read</dt>
+        <dd class="${run.bobSawAlteredText ? "mitm-bad" : ""} mitm-quote" id="mitm-bob-read">${
+          run.bobReceived === null ? "nothing arrived he could open" : escapeHtml(run.bobReceived)
+        }</dd>
+      </dl>
+      ${
+        run.eveRecovered !== null
+          ? `<p class="text-xs text-zinc-400 mt-2">
+               Eve re-sealed ${run.bobSawAlteredText ? "<strong>her own text</strong>" : "the letter verbatim"} to Bob's genuine key, so Bob's
+               decryption succeeded and his authentication tag verified. Every cryptographic check on Bob's side passed. The only thing
+               that was ever wrong was <em>whose key Alice trusted</em> — which is why the signature check in step 2, and not the encryption,
+               is what stops this.
+             </p>`
+          : ""
+      }
+    </div>
   `;
 }
 
@@ -568,6 +749,8 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
           </div>
         </div>
       </section>
+
+      ${renderMitmPanel(algo)}
     </div>
   `;
 }
@@ -806,6 +989,24 @@ function bindEvents() {
     await withBusy(e.currentTarget as HTMLButtonElement, "Trying Eve's key…", () => doOpenWrong(algo));
   });
 
+  // Man-in-the-middle exhibit (ECIES tab). The result block is swapped in place
+  // rather than re-rendering the page, so the learner keeps their message text
+  // and can run both variants back to back.
+  const mitmMessage = document.getElementById("mitm-message") as HTMLTextAreaElement | null;
+  mitmMessage?.addEventListener("input", () => {
+    mitm.message = mitmMessage.value;
+  });
+  const mitmTamper = document.getElementById("mitm-tamper") as HTMLInputElement | null;
+  mitmTamper?.addEventListener("change", () => {
+    mitm.tamper = mitmTamper.checked;
+  });
+  document.getElementById("btn-mitm-unauth")?.addEventListener("click", async (e) => {
+    await withBusy(e.currentTarget as HTMLButtonElement, "Intercepting…", () => doMitm(false));
+  });
+  document.getElementById("btn-mitm-auth")?.addEventListener("click", async (e) => {
+    await withBusy(e.currentTarget as HTMLButtonElement, "Verifying…", () => doMitm(true));
+  });
+
   // Copy ciphertext
   document.getElementById("btn-copy-ct")?.addEventListener("click", async () => {
     await navigator.clipboard.writeText(state[algo].ciphertext);
@@ -1008,6 +1209,31 @@ async function doOpenWrong(algo: "ecies" | "rsa2048" | "rsa4096") {
     announce("Decryption with the wrong key failed, as expected.");
     showResultMessage(msg, true, "Eve's attempt — failed as expected ✓");
   }
+}
+
+// Run the man-in-the-middle exhibit. Eve always substitutes her key here — the
+// only variable is whether Alice checks the signature that would expose her.
+async function doMitm(authenticated: boolean) {
+  const msgEl = document.getElementById("mitm-message") as HTMLTextAreaElement | null;
+  const tamperEl = document.getElementById("mitm-tamper") as HTMLInputElement | null;
+  if (msgEl) mitm.message = msgEl.value;
+  if (tamperEl) mitm.tamper = tamperEl.checked;
+
+  const run = await runMitm({
+    message: mitm.message,
+    authenticated,
+    substitute: true,
+    tamper: mitm.tamper,
+  });
+  mitm.run = run;
+
+  const target = document.getElementById("mitm-result");
+  if (target) target.innerHTML = renderMitmRun(run);
+  announce(
+    run.aborted
+      ? "Signature verification failed. Alice aborted; Eve recovered nothing."
+      : `Eve read the letter. Alice's and Bob's secrets ${run.secretsMatch ? "match" : "differ"}.`
+  );
 }
 
 // ── Benchmark (Compare tab) ──────────────────────────────────────────

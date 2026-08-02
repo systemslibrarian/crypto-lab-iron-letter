@@ -326,3 +326,55 @@ html[data-theme="light"] .ecdh-result .text-zinc-400 { color: #a1a1aa !important
   color: #fcd34d; /* amber-300 */
   margin-top: 0.5rem;
 }
+
+/* ── Man-in-the-middle exhibit ─────────────────────────────────────── */
+/* Same self-contained dark-card strategy as the ECDH panel: fixed colors so
+   contrast holds in BOTH themes regardless of page background. Every pair below
+   is light-on-#0a0a0b and verified >= 4.5:1. */
+.mitm-step {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  background-color: #0a0a0b; /* zinc-950, fixed */
+  border: 1px solid #3f3f46; /* zinc-700 */
+}
+.mitm-step-title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #e4e4e7; /* zinc-200 on #0a0a0b ≈ 15:1 */
+  margin-bottom: 0.6rem;
+  letter-spacing: 0.02em;
+}
+.mitm-kv {
+  display: grid;
+  grid-template-columns: minmax(11rem, auto) 1fr;
+  gap: 0.4rem 1rem;
+  font-size: 0.75rem;
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .mitm-kv { grid-template-columns: 1fr; gap: 0.15rem; }
+  .mitm-kv dd { margin-bottom: 0.5rem; }
+}
+.mitm-kv dt { color: #a1a1aa; } /* zinc-400 on #0a0a0b ≈ 7:1 */
+.mitm-kv dd { color: #e4e4e7; margin: 0; overflow-wrap: anywhere; }
+.mitm-mono {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+.mitm-quote {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  background-color: #050505;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.25rem;
+  border: 1px solid #27272a;
+}
+/* .mitm-step is a fixed-dark card in both themes, so the light-theme darkening
+   of .text-zinc-400 (which assumes a light background) must not apply inside it. */
+.mitm-step .text-zinc-400,
+html[data-theme="light"] .mitm-step .text-zinc-400 { color: #a1a1aa !important; }
+.mitm-ok { color: #6ee7b7 !important; }  /* emerald-300 ≈ 11:1 */
+.mitm-bad { color: #fca5a5 !important; } /* red-300 ≈ 8:1 */
+.mitm-secret-bad {
+  border-color: #b91c1c !important; /* red-700 */
+  color: #fca5a5 !important;
+}

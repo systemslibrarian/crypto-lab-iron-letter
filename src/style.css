@@ -166,6 +166,52 @@ html[data-theme="light"] .border-zinc-800\/50 {
   border-color: var(--color-zinc-300) !important;
 }
 
+/* ── Focus indicators, light theme (WCAG 2.1 SC 1.4.11) ─────────────────────
+   Tailwind's `focus:outline-<hue>-400` utilities were chosen against the dark
+   page, where they are 6-10:1. Nobody carried them across to the light one, and
+   a focus ring has the same 3:1 non-text-contrast duty as any other component
+   boundary. Measured off screenshots at zinc-100 (#f4f4f5):
+
+     amber-400   1.57:1     emerald-400  1.65:1
+     violet-400  2.40:1     red-400      2.45:1
+
+   — so on the light theme every button, input and textarea in this lab lost its
+   keyboard focus indicator, which is the whole navigation story for anyone not
+   using a mouse. The -700 variants are what the neighbouring `.text-*` and
+   `.border-amber-400` overrides above already switch to, and they measure
+   4.3-7.6:1 on the same surface. This is the same fix, applied to the one
+   property that was missed.
+
+   The `:focus` (not `:focus-visible`) selector mirrors what Tailwind's `focus:`
+   variant generates, so these land on exactly the rules they are correcting. */
+html[data-theme="light"] .focus\:outline-amber-400:focus,
+html[data-theme="light"] .focus\:border-amber-400:focus {
+  outline-color: var(--color-amber-700);
+  border-color: var(--color-amber-700);
+}
+html[data-theme="light"] .focus\:outline-emerald-400:focus {
+  outline-color: var(--color-emerald-700);
+}
+html[data-theme="light"] .focus\:outline-violet-400:focus {
+  outline-color: var(--color-violet-700);
+}
+html[data-theme="light"] .focus\:outline-red-400:focus {
+  outline-color: var(--color-red-700);
+}
+
+/* ── Public-key size bar chart (WCAG 2.1 SC 1.4.11) ─────────────────────────
+   The bar IS the comparison — it is how the lab shows a 65-byte ECC key beside
+   a 550-byte RSA one — so it is a graphical object that has to be 3:1 against
+   what is adjacent to it, which is its own track. It used `bg-amber-500` on
+   `bg-zinc-800`; in the light theme the `html[data-theme="light"] .bg-zinc-800`
+   override above turns that track into zinc-200 and the pair measured 1.65:1,
+   a bar you cannot see against the trough it sits in. Named classes rather than
+   utilities, because the two colours have to move together and per-theme. */
+.key-bar-track { background-color: var(--color-zinc-800); }
+.key-bar { background-color: var(--color-amber-500); } /* 6.9:1 on zinc-800 */
+html[data-theme="light"] .key-bar-track { background-color: var(--color-zinc-300); }
+html[data-theme="light"] .key-bar { background-color: var(--color-amber-700); } /* 3.5:1 on zinc-300 */
+
 html[data-theme="light"] .theme-toggle {
   border-color: var(--color-zinc-400);
   background-color: var(--color-zinc-50);

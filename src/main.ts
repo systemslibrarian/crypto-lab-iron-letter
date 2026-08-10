@@ -281,13 +281,23 @@ function glossaryId(term: string): string {
   return "gloss-" + term.replace(/[^A-Za-z0-9]/g, "-").toLowerCase();
 }
 
+// Every glossary reference carries its definition in a visually-hidden span that
+// `aria-describedby` points at, and several terms are used more than once on a
+// page — "base64url" appears in the seal label and again in the open label,
+// "AES-GCM" three times. A per-term id therefore produced DUPLICATE ids, which
+// makes `aria-describedby` ambiguous: the spec says the first match wins, but
+// axe cannot decide which node it resolves to and files the whole thing under
+// `incomplete`, where a violations-only gate never looks. It was 152 findings
+// across the drive. A monotonic suffix makes each reference its own node.
+let glossaryInstance = 0;
+
 // Renders a dotted-underline term whose definition is available on hover
 // (title) and to assistive tech (aria-describedby → a visually-hidden node).
 function term(t: string, display?: string): string {
   const def = GLOSSARY[t];
   const label = display ?? t;
   if (!def) return escapeHtml(label);
-  const id = glossaryId(t);
+  const id = `${glossaryId(t)}-${++glossaryInstance}`;
   return `<span class="gloss-term" tabindex="0" role="note" title="${escapeHtml(def)}" aria-describedby="${id}">${escapeHtml(label)}<span id="${id}" class="sr-only">${escapeHtml(def)}</span></span>`;
 }
 
@@ -327,7 +337,7 @@ function renderByteStrip(segs: ByteSeg[], caption: string): string {
     .join("");
   return `
     <div class="mt-3" role="group" aria-label="${escapeHtml(caption)}">
-      <div class="byte-strip flex w-full rounded-lg overflow-hidden border border-zinc-700" aria-hidden="true">${bars}</div>
+      <div class="byte-strip flex w-full rounded-lg overflow-hidden border border-zinc-500" aria-hidden="true">${bars}</div>
       <ul class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-zinc-400">${legend}</ul>
     </div>`;
 }
@@ -436,7 +446,7 @@ function renderMitmPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
       <div>
         <label for="mitm-message" class="text-xs text-zinc-400 block mb-1">Alice's letter (she believes she is sealing it to Bob)</label>
         <textarea id="mitm-message" rows="2"
-          class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400 resize-y"
+          class="w-full bg-zinc-950 border border-zinc-500 text-zinc-200 text-sm rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400 resize-y"
         >${escapeHtml(mitm.message)}</textarea>
       </div>
       <div class="flex items-center gap-2">
@@ -445,10 +455,10 @@ function renderMitmPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
         <label for="mitm-tamper" class="text-xs text-zinc-300">Eve rewrites the letter before relaying it (active, not just eavesdropping)</label>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button id="btn-mitm-unauth" class="min-h-[44px] px-4 py-2 rounded-lg bg-red-800 text-white font-medium text-sm hover:bg-red-700 transition-colors focus:outline-2 focus:outline-red-400 focus:outline-offset-2">
+        <button id="btn-mitm-unauth" class="min-h-[44px] px-4 py-2 rounded-lg bg-red-800 border border-red-500 text-white font-medium text-sm hover:bg-red-700 transition-colors focus:outline-2 focus:outline-red-400 focus:outline-offset-2">
           Mount the attack — unauthenticated
         </button>
-        <button id="btn-mitm-auth" class="min-h-[44px] px-4 py-2 rounded-lg bg-emerald-700 text-white font-medium text-sm hover:bg-emerald-600 transition-colors focus:outline-2 focus:outline-emerald-400 focus:outline-offset-2">
+        <button id="btn-mitm-auth" class="min-h-[44px] px-4 py-2 rounded-lg bg-emerald-600 text-zinc-950 font-medium text-sm hover:bg-emerald-500 transition-colors focus:outline-2 focus:outline-emerald-400 focus:outline-offset-2">
           Same attack — Alice verifies the signed key
         </button>
       </div>
@@ -620,7 +630,7 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
       <!-- Keygen Panel -->
       <section class="bg-zinc-900 rounded-xl p-6 border border-zinc-800">
         <h2 class="text-lg font-semibold text-zinc-200 mb-4"><span aria-hidden="true">🔑</span> Key Generation</h2>
-        <button id="btn-keygen" class="min-h-[44px] px-4 py-2 rounded-lg bg-amber-500 text-zinc-950 font-medium text-sm hover:bg-amber-400 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
+        <button id="btn-keygen" class="min-h-[44px] px-4 py-2 rounded-lg bg-amber-500 border border-amber-700 text-zinc-950 font-medium text-sm hover:bg-amber-400 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
           Generate ${algoLabel} keypairs for Alice, Bob & Eve
         </button>
         ${
@@ -644,10 +654,10 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
             </div>
             <!-- Share URL -->
             <div class="flex gap-2 items-center">
-              <button id="btn-copy-url" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
+              <button id="btn-copy-url" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 border border-zinc-500 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
                 <span aria-hidden="true">📋</span> Copy share URL
               </button>
-              <button id="btn-qr" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
+              <button id="btn-qr" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 border border-zinc-500 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
                 <span aria-hidden="true">📱</span> QR Code
               </button>
             </div>
@@ -666,18 +676,29 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
           <div>
             <label for="seal-recipient-pk" class="text-xs text-zinc-400 block mb-1">Recipient Public Key — <span class="text-emerald-300 font-semibold">Bob</span> (${term("base64url", "base64url")})</label>
             <input id="seal-recipient-pk" type="text" value="${escapeHtml(recipientPublicKey)}"
-              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400"
+              class="w-full bg-zinc-950 border border-zinc-500 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400"
               placeholder="Paste recipient's public key..."
             />
           </div>
           <div>
             <label for="seal-message" class="text-xs text-zinc-400 block mb-1">Message</label>
             <textarea id="seal-message" rows="3"
-              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400 resize-y"
+              class="w-full bg-zinc-950 border border-zinc-500 text-zinc-200 text-sm rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400 resize-y"
               placeholder="Type your secret message..."
             ></textarea>
           </div>
-          <button id="btn-seal" class="min-h-[44px] px-4 py-2 rounded-lg bg-emerald-700 text-white font-medium text-sm hover:bg-emerald-600 transition-colors focus:outline-2 focus:outline-emerald-400 focus:outline-offset-2">
+          <!-- emerald-600 + near-black text, not emerald-700 + white. Two
+               constraints pull in opposite directions and only a narrow band
+               satisfies both: 1.4.3 needs the label to clear 4.5:1 on the fill,
+               and 1.4.11 needs the fill itself to clear 3:1 on BOTH panels — the
+               dark zinc-900 card and the light zinc-100 one. White on
+               emerald-700 was 5.36:1 at rest but 3.65:1 under the pointer,
+               because the hover utility lightens the fill; near-black on
+               emerald-700 fixed the hover and broke the rest at 3.71:1. Moving
+               the resting fill to emerald-600 (relative luminance 0.238, inside
+               the 0.190-0.263 window the two rules leave) satisfies rest, hover
+               and both themes at once. -->
+          <button id="btn-seal" class="min-h-[44px] px-4 py-2 rounded-lg bg-emerald-600 text-zinc-950 font-medium text-sm hover:bg-emerald-500 transition-colors focus:outline-2 focus:outline-emerald-400 focus:outline-offset-2">
             Seal Letter
           </button>
           ${
@@ -691,7 +712,7 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
             <div class="mt-3">
               <div class="flex items-center justify-between mb-1">
                 <div class="text-xs text-zinc-400">Sealed envelope (${m.ciphertextSizeBytes} bytes) — ${m.encryptTimeMs.toFixed(1)}ms</div>
-                <button id="btn-copy-ct" aria-label="Copy ciphertext to clipboard" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
+                <button id="btn-copy-ct" aria-label="Copy ciphertext to clipboard" class="min-h-[44px] min-w-[44px] px-3 py-2 text-xs rounded-lg bg-zinc-800 border border-zinc-500 text-zinc-300 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
                   <span aria-hidden="true">📋</span> Copy
                 </button>
               </div>
@@ -715,24 +736,24 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
           <div>
             <label for="open-privkey" class="text-xs text-zinc-400 block mb-1">Private Key — <span class="text-emerald-300 font-semibold">Bob</span> (${term("PKCS8")}, ${term("base64url", "base64url")})</label>
             <input id="open-privkey" type="text" value="${escapeHtml(s.bob.privateKeyB64)}"
-              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400"
+              class="w-full bg-zinc-950 border border-zinc-500 text-zinc-200 text-xs font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400"
               placeholder="Paste your private key..."
             />
           </div>
           <div>
             <label for="open-ciphertext" class="text-xs text-zinc-400 block mb-1">Ciphertext</label>
             <textarea id="open-ciphertext" rows="3"
-              class="w-full bg-zinc-950 border border-zinc-700 text-zinc-200 text-sm font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400 resize-y"
+              class="w-full bg-zinc-950 border border-zinc-500 text-zinc-200 text-sm font-mono rounded-lg p-3 focus:outline-2 focus:outline-amber-400 focus:border-amber-400 resize-y"
               placeholder="Paste ciphertext here..."
             >${escapeHtml(s.ciphertext)}</textarea>
           </div>
           <div class="flex flex-wrap gap-2">
-            <button id="btn-open" class="min-h-[44px] px-4 py-2 rounded-lg bg-violet-600 text-white font-medium text-sm hover:bg-violet-500 transition-colors focus:outline-2 focus:outline-violet-400 focus:outline-offset-2">
+            <button id="btn-open" class="min-h-[44px] px-4 py-2 rounded-lg bg-violet-500 text-zinc-950 font-medium text-sm hover:bg-violet-400 transition-colors focus:outline-2 focus:outline-violet-400 focus:outline-offset-2">
               Open with Bob's key
             </button>
             ${
               s.eve.privateKeyB64 && s.ciphertext
-                ? `<button id="btn-open-wrong" class="min-h-[44px] px-4 py-2 rounded-lg bg-zinc-800 text-red-300 font-medium text-sm border border-red-800 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-red-400 focus:outline-offset-2">
+                ? `<button id="btn-open-wrong" class="min-h-[44px] px-4 py-2 rounded-lg bg-zinc-800 text-red-300 font-medium text-sm border border-red-500 hover:bg-zinc-700 transition-colors focus:outline-2 focus:outline-red-400 focus:outline-offset-2">
                      Try opening with Eve's WRONG key
                    </button>`
                 : ""
@@ -766,7 +787,7 @@ function renderCompare(): string {
       <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h2 class="text-lg font-semibold text-zinc-200"><span aria-hidden="true">📊</span> Side-by-Side Comparison</h2>
         <button id="btn-benchmark" ${benchmarkRunning ? "disabled" : ""}
-          class="min-h-[44px] px-4 py-2 rounded-lg bg-amber-500 text-zinc-950 font-medium text-sm hover:bg-amber-400 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
+          class="min-h-[44px] px-4 py-2 rounded-lg bg-amber-500 border border-amber-700 text-zinc-950 font-medium text-sm hover:bg-amber-400 transition-colors focus:outline-2 focus:outline-amber-400 focus:outline-offset-2">
           ${benchmarkRunning ? `<span class="spinner" aria-hidden="true"></span> Benchmarking…` : "⏱ Run Benchmark"}
         </button>
       </div>
@@ -777,7 +798,7 @@ function renderCompare(): string {
         !hasData
           ? `<p class="text-sm text-zinc-400">Run the benchmark above, or generate keys and encrypt messages in each tab, to see comparisons.</p>`
           : `
-        <div class="overflow-x-auto">
+        <div class="overflow-x-auto" tabindex="0" role="region" aria-label="Algorithm comparison table">
           <table class="w-full text-sm">
             <thead>
               <tr class="text-zinc-400 text-xs text-left border-b border-zinc-800">
@@ -823,8 +844,8 @@ function renderCompare(): string {
                 return `
                   <div class="flex items-center gap-3" role="img" aria-label="${labels[a]}: ${bytes} bytes">
                     <span class="text-xs text-zinc-400 w-20 shrink-0">${labels[a]}</span>
-                    <div class="flex-1 bg-zinc-800 rounded-full h-4 overflow-hidden">
-                      <div class="h-full bg-amber-500 rounded-full transition-all" style="width: ${pct}%"></div>
+                    <div class="flex-1 key-bar-track rounded-full h-4 overflow-hidden">
+                      <div class="h-full key-bar rounded-full transition-all" style="width: ${pct}%"></div>
                     </div>
                     <span class="text-xs text-zinc-400 w-20 text-right">${bytes} B</span>
                   </div>
@@ -1039,13 +1060,34 @@ function bindEvents() {
   document.getElementById("btn-qr")?.addEventListener("click", () => {
     const container = document.getElementById("qr-container")!;
     qrVisible[algo] = !qrVisible[algo];
-    if (qrVisible[algo]) {
-      const url = buildShareUrl(state[algo].publicKeyB64, algo);
-      container.innerHTML = generateQrSvg(url, 200);
-      container.classList.remove("hidden");
-    } else {
+    if (!qrVisible[algo]) {
       container.classList.add("hidden");
+      return;
     }
+    const url = buildShareUrl(state[algo].publicKeyB64, algo);
+    try {
+      container.innerHTML = generateQrSvg(url, 200);
+    } catch {
+      // This encoder tops out at version 20 / EC level M, which is 669 bytes.
+      // An RSA-4096 SPKI public key is ~550 bytes, and base64url expands that to
+      // ~734 before the share URL's own ~50 characters are added — so it does
+      // not fit, `pickVersion` throws, and until this catch existed the button
+      // silently did nothing at all: no QR, no message, no error.
+      //
+      // Saying so is better than hiding it, because "the key does not fit in a
+      // QR code" is this lab's entire argument for elliptic curves, stated in
+      // the most concrete form available. ECIES P-256's 65-byte key fits with
+      // room to spare.
+      container.innerHTML = `<p class="text-xs text-amber-400 max-w-prose">
+        This ${algo === "rsa4096" ? "RSA-4096" : "RSA-2048"} public key is too large to fit in a QR code
+        (${state[algo].metrics.publicKeySizeBytes} bytes, ~${Math.ceil((state[algo].metrics.publicKeySizeBytes * 4) / 3)} base64url characters;
+        a QR code of this kind holds 669). Use “Copy share URL” instead — or generate an
+        ECIES P-256 key, whose 65 bytes fit easily. That difference is the whole
+        point of the comparison.
+      </p>`;
+      announce("This public key is too large to fit in a QR code. Use Copy share URL instead.");
+    }
+    container.classList.remove("hidden");
   });
 }
 

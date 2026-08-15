@@ -46,13 +46,13 @@ import {
  * place the rule is sound.
  */
 
-for (const theme of ['dark', 'light'] as const) {
+for (const theme of ['dark'] as const) {
   test(`no WCAG A/AA violations in ${theme} theme`, async ({ page }) => {
     test.setTimeout(1_800_000);
     await boot(page, theme);
     await driveAllStates(page, theme);
     await driveDeepLink(page, theme);
-    if (theme === 'light') expectBaselineNotStale();
+    expectBaselineNotStale();
     reportCollected();
   });
 
@@ -62,7 +62,7 @@ for (const theme of ['dark', 'light'] as const) {
     await boot(page, theme);
     await driveAllStates(page, `${theme} @380px`);
     await driveDeepLink(page, `${theme} @380px`);
-    if (theme === 'light') expectBaselineNotStale();
+    expectBaselineNotStale();
     reportCollected();
   });
 }

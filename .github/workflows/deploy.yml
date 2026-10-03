@@ -17,11 +17,15 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build-and-deploy:
+  # The gate. NO `environment:` here, on purpose. An environment with a branch
+  # policy rejects the job before a single step runs when the ref is a pull
+  # request branch, which is what happened here: every Dependabot PR showed this
+  # job failing in seconds with ZERO steps executed, the auto-merge job below
+  # never got its green `needs:`, and bumps sat open indefinitely. The
+  # step-level `if: github.event_name != 'pull_request'` guards on the publish
+  # steps never got the chance to run. See audits/_MASTER-TEMPLATE.md section 6.
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -41,13 +45,23 @@ jobs:
       - uses: actions/configure-pages@v6
         if: github.event_name != 'pull_request'
 
+      # Uploaded on every ref, PRs included: building the artifact is part of
+      # proving the bump is safe, and uploading it needs no environment.
       - uses: actions/upload-pages-artifact@v5
-        if: github.event_name != 'pull_request'
         with:
           path: dist
 
+  # Publishing is its own job, so the environment is only ever requested on a
+  # ref the branch policy allows. A pull request is tested and never published.
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
-        if: github.event_name != 'pull_request'
         uses: actions/deploy-pages@v5
 
   # Dependabot only. Runs after the gate above, so a bump can only merge itself
@@ -56,7 +70,8 @@ jobs:
   # bumps and they were overwhelmingly majors (@noble v2 dropped export subpaths,
   # TypeScript 7, vitest 4), so those still want a human.
   dependabot-auto-merge:
-    needs: build-and-deploy
+    # The GATE, not the publish job -- `deploy` does not run on a pull request.
+    needs: build
     if: github.event_name == 'pull_request' && github.actor == 'dependabot[bot]'
     runs-on: ubuntu-latest
     permissions:

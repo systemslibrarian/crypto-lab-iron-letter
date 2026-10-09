@@ -5,19 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
-    "deploy": "npm run build && gh-pages -d dist",
+    "build": "npm run test:publish-request && tsc && vite build",
+    "deploy": "gh workflow run deploy.yml --repo systemslibrarian/crypto-lab-iron-letter --ref main",
     "preview": "vite preview",
     "test": "vitest run src/__tests__",
     "test:e2e": "npm run build && playwright test",
-    "test:a11y": "npm run build && playwright test e2e/a11y.spec.ts"
+    "test:a11y": "npm run build && playwright test e2e/a11y.spec.ts",
+    "test:publish-request": "node --test tests/publish-request.node.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.4",
-    "gh-pages": "^6.3.0",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.2",

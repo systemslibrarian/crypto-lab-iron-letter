@@ -31,7 +31,7 @@ The demo lets you generate keypairs, seal messages, and open ciphertext for ECIE
 
 - Hybrid encryption (a public-key wrap of a symmetric content key) is how real systems seal data — PGP/GPG, S/MIME, age, and JOSE/JWE all follow this pattern.
 - ECIES-style schemes underpin encrypted messaging and many wallet/blockchain encryption flows.
-- RSA-OAEP key wrapping appears in document encryption, legacy TLS, and KMS envelope encryption.
+- RSA-OAEP key wrapping appears in document encryption and KMS envelope encryption. Legacy TLS RSA key exchange instead used RSAES-PKCS1-v1_5 ([RFC 5246 §7.4.7.1](https://datatracker.ietf.org/doc/html/rfc5246#section-7.4.7.1)).
 - The ECC-versus-RSA key-size and performance trade-off shown here drives real protocol and platform choices, especially on constrained or high-volume systems.
 
 ## How to Run Locally

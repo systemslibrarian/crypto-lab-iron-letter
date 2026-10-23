@@ -424,3 +424,22 @@ html[data-theme="light"] .mitm-step .text-zinc-400 { color: #a1a1aa !important; 
   border-color: #b91c1c !important; /* red-700 */
   color: #fca5a5 !important;
 }
+
+/* 5G SUCI fields preserve long hexadecimal outputs at narrow widths. */
+.suci-fields {
+  display: grid;
+  grid-template-columns: minmax(10rem, 12rem) minmax(0, 1fr);
+  gap: 0.55rem 1rem;
+  font-size: 0.875rem;
+}
+.suci-fields dt { color: #d4d4d8; }
+.suci-fields dd { margin: 0; color: #f4f4f5; overflow-wrap: anywhere; }
+.suci-bytes {
+  font: 0.75rem/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+@media (max-width: 640px) {
+  .suci-fields { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+  .suci-fields dd { margin-bottom: 0.65rem; }
+}

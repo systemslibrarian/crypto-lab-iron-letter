@@ -9,6 +9,10 @@ import { measure, measureAverage, emptyMetrics, type Metrics } from "./crypto/me
 import { runStartupSelfTest } from "./crypto/selftest";
 import { buildShareUrl, parseCurrentUrl } from "./keyurl";
 import { generateQrSvg } from "./qr";
+import {
+  SUCI_SPEC, generateHomeNetworkKeys, hex, openProfileA, packMsin, sealProfileA,
+  unpackMsin,
+} from "./crypto/suci";
 
 // ── Boot self-test ───────────────────────────────────────────────────
 
@@ -54,7 +58,7 @@ function emptyParty(): Party {
   return { publicKey: null, privateKey: null, publicKeyB64: "", privateKeyB64: "" };
 }
 
-type Tab = "ecies" | "rsa2048" | "rsa4096" | "compare";
+type Tab = "ecies" | "rsa2048" | "rsa4096" | "compare" | "suci";
 type SelfTestState =
   | { status: "running"; message: string }
   | { status: "passed"; message: string }
@@ -116,6 +120,26 @@ const SECURITY_BITS: Record<"ecies" | "rsa2048" | "rsa4096", number> = {
 };
 let benchmarkRunning = false;
 
+type SuciScenario = "profile-a" | "null" | "emergency";
+const suci: {
+  scenario: SuciScenario;
+  msin: string;
+  tamper: boolean;
+  home: CryptoKeyPair | null;
+  result: {
+    schemeOutput: string;
+    ephemeral: string;
+    ciphertext: string;
+    mac: string;
+    recovered: string;
+    rejected: boolean;
+  } | null;
+  error: string;
+} = {
+  scenario: "profile-a", msin: "001002086", tamper: false,
+  home: null, result: null, error: "",
+};
+
 // ── UI Rendering ─────────────────────────────────────────────────────
 
 const app = document.getElementById("app")!;
@@ -170,11 +194,12 @@ function render() {
         ${renderTab("rsa2048", "RSA-2048")}
         ${renderTab("rsa4096", "RSA-4096")}
         ${renderTab("compare", "Compare")}
+        ${renderTab("suci", "5G identity")}
       </nav>
 
       <main id="main-content">
         <div id="tabpanel" role="tabpanel" aria-labelledby="tab-${currentTab}">
-          ${currentTab === "compare" ? renderCompare() : renderAlgoPanel(currentTab)}
+          ${currentTab === "compare" ? renderCompare() : currentTab === "suci" ? renderSuci() : renderAlgoPanel(currentTab)}
         </div>
       </main>
 
@@ -242,6 +267,109 @@ function renderTab(id: Tab, label: string): string {
         : "text-zinc-400 hover:text-zinc-200"
     }"
   >${label}</button>`;
+}
+
+function renderSuci(): string {
+  const protectedMode = suci.scenario === "profile-a";
+  const result = suci.result;
+  return `
+    <section class="space-y-5" aria-labelledby="suci-title">
+      <div class="rounded-lg border border-zinc-700 bg-zinc-900 p-5">
+        <h2 id="suci-title" class="text-xl font-semibold text-amber-300">5G subscriber identity concealment</h2>
+        <p class="mt-2 text-sm text-zinc-200">A phone has a permanent subscriber identifier (SUPI). When an IMSI-based SUPI must be sent before authentication, a protected SUCI conceals its subscriber digits (MSIN) for the home network. The home network and routing fields stay visible.</p>
+        <p class="mt-2 text-sm text-zinc-300">This is a separate 5G <strong>ECIES Profile A</strong> construction: X25519, ANSI X9.63 KDF, AES-128-CTR and an eight-byte HMAC tag. It does not use the P-256/HKDF/AES-GCM letter format in the other tab.</p>
+      </div>
+
+      <div class="rounded-lg border border-zinc-700 bg-zinc-900 p-5 space-y-4">
+        <h3 class="text-lg font-semibold text-zinc-100">Build a conceptual SUCI</h3>
+        <div class="grid gap-4 sm:grid-cols-2">
+          <label class="block text-sm text-zinc-200" for="suci-msin">Synthetic subscriber digits (MSIN; example from Annex C.4.3.1)
+            <input id="suci-msin" type="text" inputmode="numeric" autocomplete="off" maxlength="10"
+              class="mt-2 block w-full rounded border border-zinc-500 bg-zinc-950 p-2 text-zinc-100"
+              value="${escapeHtml(suci.msin)}" />
+          </label>
+          <label class="block text-sm text-zinc-200" for="suci-scenario">Situation
+            <select id="suci-scenario" class="mt-2 block w-full rounded border border-zinc-500 bg-zinc-950 p-2 text-zinc-100">
+              <option value="profile-a" ${protectedMode ? "selected" : ""}>Profile A (protected)</option>
+              <option value="null" ${suci.scenario === "null" ? "selected" : ""}>Null scheme (no public key provisioned)</option>
+              <option value="emergency" ${suci.scenario === "emergency" ? "selected" : ""}>Emergency identity response (null)</option>
+            </select>
+          </label>
+        </div>
+        <label class="inline-flex items-center gap-2 text-sm text-zinc-200" for="suci-tamper">
+          <input id="suci-tamper" type="checkbox" ${suci.tamper ? "checked" : ""} ${!protectedMode ? "disabled" : ""} />
+          Change one encrypted bit in transit (Profile A only)
+        </label>
+        <div><button id="suci-build" type="button" class="rounded border border-amber-500 px-4 py-2 text-amber-200 hover:bg-amber-950">Generate and send</button></div>
+        <p class="text-xs text-zinc-300">Use invented digits only. Each Profile A run creates a fresh ephemeral X25519 key. Values and the simulated home-network key stay in this browser session. Requires WebCrypto X25519 support.</p>
+      </div>
+
+      <div class="rounded-lg border border-zinc-700 bg-zinc-900 p-5" role="status" aria-live="polite">
+        <h3 class="text-lg font-semibold text-zinc-100">What travels and what the home network sees</h3>
+        <dl class="suci-fields mt-3">
+          <dt>Home network identifier</dt><dd>274012 (MCC 274, MNC 012) — clear</dd>
+          <dt>Routing indicator</dt><dd>0000 — clear, illustrative value</dd>
+          <dt>Protection scheme</dt><dd>${protectedMode ? "1 (Profile A)" : "0 (null)"} — clear</dd>
+          <dt>Home network key identifier</dt><dd>${protectedMode ? "illustrative 01" : "default for null scheme"} — clear</dd>
+          <dt>Scheme output</dt><dd id="suci-fields-output" class="suci-bytes">${result ? escapeHtml(result.schemeOutput) : "Generate to see the actual bytes."}</dd>
+        </dl>
+        ${suci.error ? `<p id="suci-error" class="mt-3 text-red-300">${escapeHtml(suci.error)}</p>` : ""}
+        ${result ? `<div id="suci-last-run">
+          ${protectedMode ? `<div class="mt-4 text-xs text-zinc-200 space-y-2">
+            <p><strong>Ephemeral public key:</strong> <span class="suci-bytes">${result.ephemeral}</span></p>
+            <p><strong>Encrypted MSIN bytes:</strong> <span class="suci-bytes">${result.ciphertext}</span></p>
+            <p><strong>8-byte MAC:</strong> <span class="suci-bytes">${result.mac}</span></p>
+          </div>` : `<p class="mt-3 text-amber-200">The null scheme copies packed MSIN bytes into the output. A nearby observer can read the subscriber digits.</p>`}
+          <p class="mt-4 ${result.rejected ? "text-red-300" : "text-emerald-300"}">
+            ${result.rejected ? "Home network: MAC check failed; altered output rejected before deconcealment." : `Home network recovered MSIN: <strong>${escapeHtml(result.recovered)}</strong>.`}
+          </p>
+        </div>` : ""}
+      </div>
+
+      <div class="rounded-lg border border-zinc-700 bg-zinc-900 p-5 text-sm text-zinc-200 space-y-2">
+        <h3 class="text-lg font-semibold">The privacy boundary</h3>
+        <p>Emergency registration uses the null scheme <em>when the phone receives an Identity Request</em>. The null scheme is also used if the home-network public key or allowed-scheme list is not provisioned. In both cases it provides no subscription-identifier confidentiality.</p>
+        <p>A protected SUCI does not hide the home network or routing indicator, and does not by itself stop all radio tracking or authenticate a base station. This panel models IMSI-based fields, not a complete 5G NAS encoder, Profile B, operator provisioning, or the whole 5G authentication protocol.</p>
+        <p>Primary source: <a href="${SUCI_SPEC}" target="_blank" rel="noopener noreferrer" class="text-amber-300 underline">ETSI TS 133 501 V19.7.0 (August 2026), §6.12.2 and Annex C</a>. The fixed test in this repository checks Annex C.4.3.1's official Profile A values.</p>
+      </div>
+    </section>
+  `;
+}
+
+async function runSuci(): Promise<void> {
+  suci.error = "";
+  suci.result = null;
+  try {
+    const packed = packMsin(suci.msin);
+    if (suci.scenario !== "profile-a") {
+      // Annex C.2: null-scheme output is the unmodified scheme-input.
+      suci.result = {
+        schemeOutput: hex(packed), ephemeral: "", ciphertext: "", mac: "",
+        recovered: unpackMsin(packed), rejected: false,
+      };
+    } else {
+      if (!suci.home) suci.home = await generateHomeNetworkKeys();
+      const sealed = await sealProfileA(suci.home.publicKey, suci.msin);
+      const received = sealed.schemeOutput.slice();
+      if (suci.tamper) received[32] = received[32]! ^ 1;
+      let recovered = "";
+      let rejected = false;
+      try {
+        recovered = await openProfileA(suci.home.privateKey, received);
+      } catch (error) {
+        if (!suci.tamper || !(error instanceof Error) || !error.message.includes("MAC mismatch")) throw error;
+        rejected = true;
+      }
+      suci.result = {
+        schemeOutput: hex(received), ephemeral: hex(sealed.ephemeralPublic),
+        ciphertext: hex(received.slice(32, -8)), mac: hex(sealed.mac),
+        recovered, rejected,
+      };
+    }
+  } catch (error) {
+    suci.error = error instanceof Error ? error.message : "Could not run the SUCI demonstration.";
+  }
+  render();
 }
 
 // ── Teaching helpers: glossary, hex, byte-layout strip ───────────────
@@ -975,6 +1103,35 @@ function bindEvents() {
   document.getElementById("btn-benchmark")?.addEventListener("click", () => {
     void runBenchmark();
   });
+
+  if (currentTab === "suci") {
+    const clearPreviousSuciResult = () => {
+      suci.result = null;
+      suci.error = "";
+      document.getElementById("suci-last-run")?.remove();
+      document.getElementById("suci-error")?.remove();
+      const output = document.getElementById("suci-fields-output");
+      if (output) output.textContent = "Generate to see the actual bytes.";
+    };
+    (document.getElementById("suci-msin") as HTMLInputElement | null)?.addEventListener("input", (event) => {
+      suci.msin = (event.currentTarget as HTMLInputElement).value;
+      clearPreviousSuciResult();
+    });
+    (document.getElementById("suci-scenario") as HTMLSelectElement | null)?.addEventListener("change", (event) => {
+      suci.scenario = (event.currentTarget as HTMLSelectElement).value as SuciScenario;
+      suci.result = null;
+      suci.error = "";
+      render();
+    });
+    (document.getElementById("suci-tamper") as HTMLInputElement | null)?.addEventListener("change", (event) => {
+      suci.tamper = (event.currentTarget as HTMLInputElement).checked;
+      clearPreviousSuciResult();
+    });
+    document.getElementById("suci-build")?.addEventListener("click", (event) => {
+      void withBusy(event.currentTarget as HTMLButtonElement, "Generating…", runSuci);
+    });
+    return;
+  }
 
   if (currentTab === "compare") return;
   const algo = currentTab;

@@ -171,7 +171,7 @@ export async function boot(page: Page, theme: 'dark' | 'light'): Promise<void> {
   // The whole page is rendered from main.ts into an empty `#app`, so a
   // navigation that resolves proves nothing. Require the tablist and the first
   // exhibit's controls.
-  await expect(page.locator('[role="tab"]')).toHaveCount(4);
+  await expect(page.locator('[role="tab"]')).toHaveCount(5);
   await expect(page.locator('#btn-keygen')).toBeVisible();
   // The startup self-check re-renders the whole app when it finishes, which
   // detaches anything a click is mid-flight on. Wait for the finished state,
@@ -398,7 +398,7 @@ export async function scan(page: Page, label: string): Promise<void> {
 }
 
 /** Switch tabs through the real control and wait for the re-render. */
-async function openTab(page: Page, tab: 'ecies' | 'rsa2048' | 'rsa4096' | 'compare'): Promise<void> {
+async function openTab(page: Page, tab: 'ecies' | 'rsa2048' | 'rsa4096' | 'compare' | 'suci'): Promise<void> {
   await page.locator(`#tab-${tab}`).click();
   await expect(page.locator(`#tab-${tab}`)).toHaveAttribute('aria-selected', 'true');
 }
@@ -486,7 +486,7 @@ async function driveAlgo(
 /**
  * Drive the lab through every state that renders content, scanning each.
  *
- * All four tabs, both error styles, both disclosure states, both QR states,
+ * All five tabs, both error styles, both disclosure states, both QR states,
  * both MITM outcomes (Eve reads everything / Alice aborts on the signature),
  * and the Compare tab before and after the benchmark. RSA-4096 is included
  * rather than assumed to inherit RSA-2048's result: it is the only tab whose
@@ -513,6 +513,24 @@ export async function driveAllStates(page: Page, theme: string): Promise<void> {
   await openTab(page, 'compare');
   await expect(page.locator('#tabpanel')).toContainText('Run the benchmark above');
   await scan(page, `${theme} / compare, nothing measured yet`);
+
+  await openTab(page, 'suci');
+  await scan(page, `${theme} / 5G identity, before generating`);
+  await page.locator('#suci-build').click();
+  await expect(page.locator('#suci-last-run')).toContainText('Home network recovered MSIN: 001002086');
+  await scan(page, `${theme} / 5G identity, protected Profile A`);
+  await page.locator('#suci-tamper').check();
+  await page.locator('#suci-build').click();
+  await expect(page.locator('#suci-last-run')).toContainText('MAC check failed; altered output rejected');
+  await scan(page, `${theme} / 5G identity, tampered Profile A`);
+  await page.locator('#suci-scenario').selectOption('null');
+  await page.locator('#suci-build').click();
+  await expect(page.locator('#suci-last-run')).toContainText('A nearby observer can read the subscriber digits');
+  await scan(page, `${theme} / 5G identity, null scheme`);
+  await page.locator('#suci-scenario').selectOption('emergency');
+  await page.locator('#suci-build').click();
+  await expect(page.locator('#suci-last-run')).toContainText('A nearby observer can read the subscriber digits');
+  await scan(page, `${theme} / 5G identity, emergency identity response`);
 
   await driveAlgo(page, theme, 'ecies');
 

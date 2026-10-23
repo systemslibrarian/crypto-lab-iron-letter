@@ -12,7 +12,7 @@ import {
  * WCAG A/AA regression gate.
  *
  * Every state the lab can render is driven the way a visitor reaches it: all
- * four tabs, the How It Works modal, the seal-with-nothing-entered error, three
+ * five tabs, the 5G identity scenarios, the How It Works modal, the seal-with-nothing-entered error, three
  * rounds of keygen (ECIES, RSA-2048 and RSA-4096, whose key material is the
  * only thing that overflows the capped panes), the private-key disclosure, the
  * QR panel opened and closed again, a real seal, a real open, Eve's key being

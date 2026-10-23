@@ -38,7 +38,9 @@ jobs:
 
       - run: npm test
 
-      - run: npx playwright install --with-deps chromium firefox webkit
+      # The Playwright project uses Chromium only. Installing all three browsers
+      # and apt dependencies can stall Pages builds before the test gate runs.
+      - run: npx playwright install chromium
 
       - run: npm run test:e2e
 

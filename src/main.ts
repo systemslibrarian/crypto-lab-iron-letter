@@ -1008,7 +1008,7 @@ function renderHowItWorksModal(): string {
       <div class="bg-zinc-900 border border-zinc-700 rounded-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto p-8">
         <div class="flex justify-between items-start mb-6">
           <h2 id="modal-title" class="text-xl font-bold text-zinc-100">How It Works</h2>
-          <button id="btn-close-modal" class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-zinc-400 hover:text-zinc-300 text-xl" aria-label="Close"><span aria-hidden="true">✕</span></button>
+          <button id="btn-close-modal" class="min-h-[44px] min-w-[44px] inline-flex items-center justify-center text-zinc-400 hover:text-zinc-300 text-xl before:content-['\\2715']" aria-label="Close"></button>
         </div>
 
         <div class="space-y-6 text-sm text-zinc-300">

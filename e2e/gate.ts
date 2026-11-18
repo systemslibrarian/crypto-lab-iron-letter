@@ -4,6 +4,7 @@ import { auditContrast, formatContrastFailures } from './contrast';
 import { auditControlNames, formatControlNameFailures } from './control-names';
 import { auditNonText } from './nontext';
 import { NONTEXT_BASELINE } from './nontext-baseline';
+import { assertThisLab } from './identity';
 
 export const TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'];
 
@@ -158,7 +159,9 @@ async function expectNotBlank(page: Page, label: string): Promise<void> {
 export async function boot(page: Page, theme: 'dark' | 'light'): Promise<void> {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.addInitScript((t) => localStorage.setItem('theme', t), theme);
-  await page.goto('.');
+  /* Not page.goto: a suite that navigates and starts asserting cannot
+   * tell this lab's server from anyone else's. See e2e/identity.ts. */
+  await assertThisLab(page, '.');
   // A click on a control that never becomes actionable otherwise burns the whole
   // test timeout and reports nothing useful. 20s turns that silent hang into a
   // named failure naming the locator.

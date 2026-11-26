@@ -894,7 +894,7 @@ function renderAlgoPanel(algo: "ecies" | "rsa2048" | "rsa4096"): string {
           }
           <div id="open-result" class="hidden mt-3" aria-live="polite">
             <div class="result-label text-xs text-zinc-400 block mb-1">Decrypted Message</div>
-            <div id="open-plaintext" class="text-sm text-zinc-100 bg-zinc-950 p-3 rounded-lg border border-emerald-800"></div>
+            <div id="open-plaintext" style="white-space: pre-wrap; overflow-wrap: anywhere" class="text-sm text-zinc-100 bg-zinc-950 p-3 rounded-lg border border-emerald-800"></div>
           </div>
         </div>
       </section>
@@ -1364,7 +1364,7 @@ async function doOpen(algo: "ecies" | "rsa2048" | "rsa4096") {
 
     s.metrics.decryptTimeMs = timeMs;
 
-    const decoded = new TextDecoder().decode(plaintext);
+    const decoded = new TextDecoder("utf-8", { ignoreBOM: true }).decode(plaintext);
     showResultMessage(decoded, false, `Decrypted Message — ${timeMs.toFixed(1)}ms`);
   } catch (e) {
     const messageText = e instanceof Error ? e.message : "Decryption failed.";
